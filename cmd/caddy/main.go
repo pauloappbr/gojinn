@@ -5,7 +5,7 @@ import (
 
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
-	_ "github.com/pauloappbr/caddy-wazero-reactor"
+	_ "github.com/pauloappbr/gojinn"
 )
 
 func main() {

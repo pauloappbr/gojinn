@@ -1,4 +1,4 @@
-package reactor
+package gojinn
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func TestProvision_ValidatesConfig(t *testing.T) {
 	code := `package main; func main() {}`
 	wasmPath := compileTestWasm(t, code, "empty.wasm")
 
-	r := &Reactor{
+	r := &Gojinn{
 		Path:        wasmPath,
 		MemoryLimit: "10MB",
 		Timeout:     caddy.Duration(5 * time.Second),
@@ -58,7 +58,7 @@ func TestProvision_InvalidMemoryLimit(t *testing.T) {
 	code := `package main; func main() {}`
 	wasmPath := compileTestWasm(t, code, "empty.wasm")
 
-	r := &Reactor{
+	r := &Gojinn{
 		Path:        wasmPath,
 		MemoryLimit: "BATATA", // Valor inválido
 	}
@@ -72,7 +72,7 @@ func TestProvision_InvalidMemoryLimit(t *testing.T) {
 }
 
 func TestProvision_FileNotFound(t *testing.T) {
-	r := &Reactor{
+	r := &Gojinn{
 		Path: "./arquivo_que_nao_existe.wasm",
 	}
 

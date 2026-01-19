@@ -36,7 +36,7 @@ func main() {
 		Status: 200,
 		Headers: map[string][]string{
 			"Content-Type": {"application/json"},
-			"X-Reactor":    {"Phase-1"},
+			"X-Gojinn":     {"Phase-1"},
 		},
 		Body: fmt.Sprintf(`{"message": "Hello from Wasm!", "your_method": "%s", "your_path": "%s"}`, req.Method, req.URI),
 	}

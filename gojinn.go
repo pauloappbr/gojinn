@@ -1,4 +1,4 @@
-package reactor
+package gojinn
 
 import (
 	"bytes"
@@ -21,8 +21,8 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(Reactor{})
-	httpcaddyfile.RegisterHandlerDirective("reactor", parseCaddyfile)
+	caddy.RegisterModule(Gojinn{})
+	httpcaddyfile.RegisterHandlerDirective("gojinn", parseCaddyfile)
 }
 
 type RequestPayload struct {
@@ -38,7 +38,7 @@ type ResponsePayload struct {
 	Body    string              `json:"body"`
 }
 
-type Reactor struct {
+type Gojinn struct {
 	Path        string            `json:"path,omitempty"`
 	Args        []string          `json:"args,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
@@ -50,14 +50,14 @@ type Reactor struct {
 	engine wazero.Runtime
 }
 
-func (Reactor) CaddyModule() caddy.ModuleInfo {
+func (Gojinn) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.reactor",
-		New: func() caddy.Module { return &Reactor{} },
+		ID:  "http.handlers.gojinn",
+		New: func() caddy.Module { return &Gojinn{} },
 	}
 }
 
-func (r *Reactor) Provision(ctx caddy.Context) error {
+func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 
 	if r.Path == "" {
@@ -102,14 +102,14 @@ func (r *Reactor) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (r *Reactor) Cleanup() error {
+func (r *Gojinn) Cleanup() error {
 	if r.engine != nil {
 		return r.engine.Close(context.Background())
 	}
 	return nil
 }
 
-func (r *Reactor) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
+func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
 	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
 	defer cancel()
 
@@ -183,7 +183,7 @@ func (r *Reactor) ServeHTTP(rw http.ResponseWriter, req *http.Request, next cadd
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var m Reactor
+	var m Gojinn
 	m.Env = make(map[string]string)
 
 	for h.Next() {

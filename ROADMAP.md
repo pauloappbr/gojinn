@@ -1,16 +1,16 @@
 # 🗺️ Project Roadmap
 
-This roadmap is impact-driven, avoiding hype to focus on solving real architectural constraints found in cloud-hosted serverless solutions.
+This roadmap transforms Gojinn from a runtime into a Global Serverless Platform capable of replacing legacy stacks and scaling to the edge.
 
-## 🟢 Phase 0: Foundation (Current)
-*Establish Reactor as a stable, deterministic, production-grade runtime.*
+## 🟢 Phase 0: Foundation
+*Establish Gojinn as a stable, deterministic, production-grade runtime*
 
 - [x] **In-process WASM execution** via `wazero`.
 - [x] **Stdin / Stdout model** for request-response.
 - [x] **Zero idle memory** footprint.
-- [x]Crash-safe execution** (panic isolation).
-- [x]*Explicit execution timeouts** configuration.
-- [x]*Memory limits** per execution.
+- [x] **Crash-safe execution** (panic isolation).
+- [x] **Explicit execution timeouts** configuration.
+- [x] **Memory limits** per execution.
 - [x] **Documentation:** Architecture deep-dive & Transparent benchmarks.
 
 ## 🟡 Phase 1: Workers Parity
@@ -22,26 +22,56 @@ This roadmap is impact-driven, avoiding hype to focus on solving real architectu
 - [x] **Environment Variables:** Configuration per function.
 - [x] **Per-route Binding:** Map specific `.wasm` files to specific Caddy routes.
 
-## 🔵 Phase 2: What Workers Cannot Do
-*Surpass Cloud Workers by exploiting local, in-process execution properties.*
+## 🔵 Phase 2: Enterprise Observability & Limits (Current Priority)
+*Gain trust by proving reliability and giving developers "X-Ray vision".*
 
-- [ ] **CPU Budgeting:** Strict CPU cycle limits per execution.
-- [ ] **Hard Memory Ceiling:** Deterministic memory caps per sandbox.
-- [ ] **Observability:** Native OpenTelemetry hooks for function execution time.
-- [ ] **Multi-Tenancy:** Isolation logic for running 1,000+ distinct functions on one server.
+- [ ] **Structured Logging Interface:** Implement host.Log(level, json) so WASM logs appear correctly structured in Datadog/Loki, not just as raw stdout text.
+- [ ] **OpenTelemetry Tracing:** Inject traceparent context into WASM so calls can be traced from Frontend -> Caddy -> WASM -> Database in a single waterfall view.
+- [ ] **Prometheus Metrics:** Expose native metrics: gojinn_function_duration_seconds and gojinn_active_sandboxes.
+- [ ] **CPU Budgeting:** Strict metering to prevent infinite loops.
+- [ ] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
 
-## 🟣 Phase 3: Reusable Compute
-*Turn Reactor into a compute primitive.*
 
-- [ ] **Local Function Registry.**
-- [ ] **Signed WASM verification.**
-- [ ] **Built-in Modules:** JWT Validation, Rate Limiting, Webhook Verification.
+## 🟣 Phase 3: Trust & Adoption Strategy
+*Remove barriers for adoption by legacy teams and CTOs.*
 
-## 🔴 Phase 4: Distributed, Without Lock-in
-*Scale without becoming a cloud provider.*
+- [ ] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring and PHP/WordPress to replace specific slow endpoints.
+- [ ] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn vs Docker/Lambda.
+- [ ] **"Dogfooding" Case Study:** Blog post on migrating a production app.
 
+## 🔴 Phase 4: Polyglot Support
+*Expand the ecosystem. Don't force users to learn Rust.*
+
+- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) to compile JS to WASM.
+- [ ] **Python Adapter:** Support for RustPython packed as WASM.
+- [ ] **Language-Agnostic CLI:** Gojinn build command to auto-detect language.
+
+## 🟠 Phase 5: Stateful Serverless (Performance Critical)
+*Solve the "Database Latency" problem.*
+
+- [ ] **Smart Connection Pooling:** Host-managed database connections (Postgres/MySQL) shared with WASM to prevent "Too Many Connections" errors. (Crucial for scalability).
+- [ ] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
+- [ ] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
+
+## 🟤 Phase 6: Async & Event-Driven
+*Compete with AWS Lambda's event ecosystem.*
+
+- [ ] **Cron Triggers:** Native support for scheduling functions (@every 5m)
+- [ ] **Worker Pools (Async Mode):** "Fire-and-forget" support using internal Go channels.
+- [ ] **Queue Binding:** Internal buffer for async processing.
+
+## 🔴 Phase 7: Distributed & Edge Scale
+*Scale horizontally across regions effortlessly.*
+
+- [ ] **Cluster Storage Support:** Document and support using caddy-storage-redis or consul to synchronize TLS certificates across multiple Gojinn nodes (Edge capability).
+- [ ] **OCI Registry Support:** Deploy functions by referencing container images (image: ghcr.io/user/func:v1) directly in Caddyfile (GitOps standard).
 - [ ] **Universal Runtime:** Same binary runs on Bare Metal, VPS, and Edge.
-- [ ] **Replication:** Optional function replication strategies.
+
+## 🚀 Future Horizons (Version 2.0)
+*Cutting-edge features for the next generation.*
+
+- [ ] **Edge AI Inference:** Host-level bindings for LLM inference (llama.cpp), allowing WASM to call AI without overhead.
+- [ ] **Time-Travel Debugging:** Save WASM execution inputs to replay failed requests locally
 
 ---
 

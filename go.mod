@@ -1,4 +1,4 @@
-module github.com/pauloappbr/caddy-wazero-reactor
+module github.com/pauloappbr/gojinn
 
 go 1.25
 
