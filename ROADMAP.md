@@ -22,7 +22,7 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 - [x] **Environment Variables:** Configuration per function.
 - [x] **Per-route Binding:** Map specific `.wasm` files to specific Caddy routes.
 
-## 🔵 Phase 2: Enterprise Observability & Limits (Current Priority)
+## 🔵 Phase 2: Enterprise Observability & Limits (Completed v0.2.0)
 *Gain trust by proving reliability and giving developers "X-Ray vision".*
 
 - [x] **Structured Logging Interface:** Implement host.Log(level, json) so WASM logs appear correctly structured in Datadog/Loki, not just as raw stdout text.
@@ -31,11 +31,17 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 - [x] **CPU Budgeting:** Strict metering to prevent infinite loops.
 - [x] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
 
-## 🟣 Phase 3: Trust & Adoption Strategy
-*Remove barriers for adoption by legacy teams and CTOs.*
+## 🟣 Phase 3: High Performance & Trust (Current Priority v0.3.0)
+*Turn Gojinn into the fastest serverless runtime and prove it to legacy teams.*
 
-- [ ] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring and PHP/WordPress to replace specific slow endpoints.
-- [ ] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn vs Docker/Lambda.
+### ⚙️ Core Engine (Performance)
+- [ ] **VM Pooling (Worker Pool):** Implement a pool of "warm" `wazero` instances. Instead of destroying the VM after use, reset its memory and put it back in the pool.
+    - *Goal:* Drop latency from ~1ms to **micro-seconds**.
+- [ ] **JIT Caching:** Ensure compiled modules are cached in memory globally (Singleton pattern), ensuring zero-compilation on hot paths.
+
+### 📢 Adoption Strategy
+- [x] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring. *(Done in v0.2.1)*
+- [ ] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn (Pooled) vs Docker vs Native Go.
 - [ ] **"Dogfooding" Case Study:** Blog post on migrating a production app.
 
 ## 🔴 Phase 4: Polyglot Support
@@ -45,10 +51,10 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 - [ ] **Python Adapter:** Support for RustPython packed as WASM.
 - [ ] **Language-Agnostic CLI:** Gojinn build command to auto-detect language.
 
-## 🟠 Phase 5: Stateful Serverless (Performance Critical)
+## 🟠 Phase 5: Stateful Serverless (Host Capabilities)
 *Solve the "Database Latency" problem.*
 
-- [ ] **Smart Connection Pooling:** Host-managed database connections (Postgres/MySQL) shared with WASM to prevent "Too Many Connections" errors. (Crucial for scalability).
+- [ ] **Host-Managed DB Pool:** Expose Host DB connections (Postgres/MySQL) to WASM via Host Functions to prevent "Too Many Connections" errors.
 - [ ] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
 - [ ] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
 

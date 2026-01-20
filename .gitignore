@@ -1,6 +1,7 @@
 # Binaries
 gojinn
 Caddyfile
+caddy
 *.exe
 *.dll
 *.so
