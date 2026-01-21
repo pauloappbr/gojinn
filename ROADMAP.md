@@ -35,9 +35,9 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 *Turn Gojinn into the fastest serverless runtime and prove it to legacy teams.*
 
 ### ⚙️ Core Engine (Performance)
-- [ ] **VM Pooling (Worker Pool):** Implement a pool of "warm" `wazero` instances. Instead of destroying the VM after use, reset its memory and put it back in the pool.
+- [x] **VM Pooling (Worker Pool):** Implement a pool of "warm" `wazero` instances. Instead of destroying the VM after use, reset its memory and put it back in the pool.
     - *Goal:* Drop latency from ~1ms to **micro-seconds**.
-- [ ] **JIT Caching:** Ensure compiled modules are cached in memory globally (Singleton pattern), ensuring zero-compilation on hot paths.
+- [x] **JIT Caching:** Ensure compiled modules are cached in memory globally (Singleton pattern), ensuring zero-compilation on hot paths.
 
 ### 📢 Adoption Strategy
 - [x] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring. *(Done in v0.2.1)*
