@@ -2,6 +2,7 @@ package gojinn
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"runtime"
@@ -25,11 +26,16 @@ type Gojinn struct {
 	Timeout     caddy.Duration    `json:"timeout,omitempty"`
 	MemoryLimit string            `json:"memory_limit,omitempty"`
 	PoolSize    int               `json:"pool_size,omitempty"`
+	DebugSecret string            `json:"debug_secret,omitempty"`
 
+	DBDriver string `json:"db_driver,omitempty"`
+	DBDSN    string `json:"db_dsn,omitempty"`
+	kvStore  sync.Map
+
+	db      *sql.DB
 	logger  *zap.Logger
 	metrics *gojinnMetrics
 
-	// Canal que atua como semáforo e pool de workers
 	enginePool chan *EnginePair
 }
 
@@ -43,16 +49,18 @@ func (Gojinn) CaddyModule() caddy.ModuleInfo {
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 
-	// 1. Setup Metrics (movido para metrics.go)
 	if err := r.setupMetrics(ctx); err != nil {
 		return err
+	}
+
+	if err := r.setupDB(); err != nil {
+		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
 	if r.Path == "" {
 		return fmt.Errorf("wasm file path is required")
 	}
 
-	// 2. Config Defaults
 	if r.PoolSize <= 0 {
 		numCPU := runtime.NumCPU()
 		r.PoolSize = numCPU * 4
@@ -64,7 +72,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.Timeout = caddy.Duration(60 * time.Second)
 	}
 
-	// 3. Worker Pool Init
 	r.enginePool = make(chan *EnginePair, r.PoolSize)
 
 	wasmBytes, err := os.ReadFile(r.Path)
@@ -104,10 +111,22 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 }
 
 func (r *Gojinn) Cleanup() error {
+	if r.db != nil {
+		r.logger.Info("closing database connection pool")
+		r.db.Close()
+	}
+
+	if r.enginePool == nil {
+		return nil
+	}
+
 	r.logger.Info("shutting down worker pool", zap.String("path", r.Path))
+
 	close(r.enginePool)
 	for pair := range r.enginePool {
-		pair.Runtime.Close(context.Background()) // context.Background aqui é seguro no cleanup
+		if pair != nil && pair.Runtime != nil {
+			pair.Runtime.Close(context.Background())
+		}
 	}
 	return nil
 }

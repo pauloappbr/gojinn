@@ -16,8 +16,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		if len(args) > 0 {
 			m.Path = args[0]
 		}
+
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "path":
+				if h.NextArg() {
+					m.Path = h.Val()
+				}
 			case "env":
 				if h.NextArg() {
 					key := h.Val()
@@ -44,6 +49,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					if err == nil {
 						m.PoolSize = val
 					}
+				}
+			case "debug_secret":
+				if h.NextArg() {
+					m.DebugSecret = h.Val()
+				}
+			case "db_driver":
+				if h.NextArg() {
+					m.DBDriver = h.Val()
+				}
+			case "db_dsn":
+				if h.NextArg() {
+					m.DBDSN = h.Val()
 				}
 			}
 		}

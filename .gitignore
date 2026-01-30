@@ -29,3 +29,11 @@ Thumbs.db
 caddy_data/
 caddy_config/
 autosave.json
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log

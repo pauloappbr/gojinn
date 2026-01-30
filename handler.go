@@ -3,6 +3,7 @@ package gojinn
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,14 +28,25 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	r.metrics.active.WithLabelValues(r.Path).Inc()
 	defer r.metrics.active.WithLabelValues(r.Path).Dec()
 
-	// 1. Acquire Worker
 	pair := <-r.enginePool
 	defer func() { r.enginePool <- pair }()
 
 	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
 	defer cancel()
 
-	// 2. Prepare Input
+	isDebug := r.DebugSecret != "" && req.Header.Get("X-Gojinn-Debug") == r.DebugSecret
+
+	var stderrTarget io.Writer = os.Stderr
+	var debugLogBuf *bytes.Buffer
+
+	if isDebug {
+		debugLogBuf = bufferPool.Get().(*bytes.Buffer)
+		debugLogBuf.Reset()
+		defer bufferPool.Put(debugLogBuf)
+
+		stderrTarget = io.MultiWriter(os.Stderr, debugLogBuf)
+	}
+
 	bodyBytes, err := io.ReadAll(req.Body)
 	if err != nil {
 		return err
@@ -66,19 +78,31 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	config := wazero.NewModuleConfig().
 		WithStdout(stdoutBuf).
-		WithStderr(os.Stderr).
+		WithStderr(stderrTarget).
 		WithStdin(bytes.NewReader(inputJSON)).
-		WithArgs(r.Args...)
+		WithArgs(r.Args...).
+		WithSysWalltime().
+		WithSysNanotime().
+		WithRandSource(rand.Reader)
 
 	for k, v := range r.Env {
 		config = config.WithEnv(k, v)
 	}
 
-	// 3. Fast Instantiation
 	instance, err := pair.Runtime.InstantiateModule(ctx, pair.Code, config)
 
 	duration := time.Since(start).Seconds()
 	statusLabel := "200"
+
+	injectDebugLogs := func() {
+		if isDebug && debugLogBuf.Len() > 0 {
+			logs := debugLogBuf.String()
+			if len(logs) > 4096 {
+				logs = logs[:4096] + "...(truncated)"
+			}
+			rw.Header().Set("X-Gojinn-Logs", logs)
+		}
+	}
 
 	if err != nil {
 		statusLabel = "500"
@@ -87,14 +111,17 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		}
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 		r.logger.Error("wasm execution failed", zap.Error(err))
+
+		injectDebugLogs()
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 	defer instance.Close(ctx)
 
-	// 4. Process Output
 	if stdoutBuf.Len() == 0 {
 		statusLabel = "500"
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
+
+		injectDebugLogs()
 		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("empty response"))
 	}
 
@@ -107,6 +134,8 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	if err := json.Unmarshal(stdoutBuf.Bytes(), &respPayload); err != nil {
 		statusLabel = "502"
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
+
+		injectDebugLogs()
 		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("invalid json output"))
 	}
 
@@ -115,6 +144,8 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	}
 	statusLabel = fmt.Sprintf("%d", respPayload.Status)
 	r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
+
+	injectDebugLogs()
 
 	for k, v := range respPayload.Headers {
 		for _, val := range v {

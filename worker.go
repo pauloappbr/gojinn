@@ -10,7 +10,6 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-// EnginePair mantém o Runtime e o Código Compilado juntos.
 type EnginePair struct {
 	Runtime wazero.Runtime
 	Code    wazero.CompiledModule
@@ -34,7 +33,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
 
-	// Host Module
 	_, err := engine.NewHostModuleBuilder("gojinn").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -53,6 +51,104 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_log").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			queryPtr := uint32(stack[0])
+			queryLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
+
+			qBytes, ok := mod.Memory().Read(queryPtr, queryLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			query := string(qBytes)
+
+			jsonBytes, err := r.executeQueryToJSON(query)
+			if err != nil {
+				jsonBytes = []byte(fmt.Sprintf(`[{"error": "%s"}]`, err.Error()))
+			}
+
+			bytesToWrite := uint32(len(jsonBytes))
+
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+				jsonBytes = jsonBytes[:bytesToWrite]
+			}
+
+			if !mod.Memory().Write(outPtr, jsonBytes) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}),
+			[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32},
+			[]api.ValueType{api.ValueTypeI32}).
+		Export("host_db_query").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			valPtr := uint32(stack[2])
+			valLen := uint32(stack[3])
+
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				return
+			}
+			key := string(kBytes)
+
+			vBytes, ok := mod.Memory().Read(valPtr, valLen)
+			if !ok {
+				return
+			}
+			val := string(vBytes)
+
+			r.kvStore.Store(key, val)
+
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
+		Export("host_kv_set").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
+
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			key := string(kBytes)
+
+			val, ok := r.kvStore.Load(key)
+			if !ok {
+				stack[0] = uint64(0xFFFFFFFF)
+				return
+			}
+
+			valueStr := val.(string)
+			valBytes := []byte(valueStr)
+			valLen := uint32(len(valBytes))
+
+			bytesToWrite := valLen
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+			}
+
+			if !mod.Memory().Write(outPtr, valBytes[:bytesToWrite]) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}),
+			[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32},
+			[]api.ValueType{api.ValueTypeI32}).
+		Export("host_kv_get").
 		Instantiate(ctxWazero)
 
 	if err != nil {

@@ -31,7 +31,7 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 - [x] **CPU Budgeting:** Strict metering to prevent infinite loops.
 - [x] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
 
-## 🟣 Phase 3: High Performance & Trust (Current Priority v0.3.0)
+## 🟣 Phase 3: High Performance & Trust (Completed v0.3.0)
 *Turn Gojinn into the fastest serverless runtime and prove it to legacy teams.*
 
 ### ⚙️ Core Engine (Performance)
@@ -41,22 +41,24 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 
 ### 📢 Adoption Strategy
 - [x] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring. *(Done in v0.2.1)*
-- [ ] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn (Pooled) vs Docker vs Native Go.
-- [ ] **"Dogfooding" Case Study:** Blog post on migrating a production app.
+- [x] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn (Pooled) vs Docker vs Native Go.
+- [x] **"Dogfooding" Case Study:** Migrated `paulo.app.br` backend to Gojinn, reducing latency to <100ms and removing idle containers.
 
-## 🔴 Phase 4: Polyglot Support
+## 🟠 Phase 4: Host Capabilities & Developer Experience (Completed v0.4.0)
+*Solve the "Database Latency" problem and embrace modern web patterns.*
+
+- [x] **Secure Debug Mode:** Implement `X-Gojinn-Debug` header logic. If a secret matches, capture Stderr and inject it into Response Headers (`X-Logs`) for browser-based debugging.
+- [x] **HTMX & SSR Patterns:** Create official examples and helpers for returning HTML fragments from WASM (Go Templates/Rust) instead of JSON. Validate the "Hypermedia-Driven" architecture.
+- [x] **Host-Managed DB Pool:** Expose Host DB connections (Postgres/MySQL) to WASM via Host Functions to prevent "Too Many Connections" errors.
+- [x] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
+- [ ] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
+
+## 🔴 Phase 5: Polyglot Support (Current Priority)
 *Expand the ecosystem. Don't force users to learn Rust.*
 
 - [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) to compile JS to WASM.
 - [ ] **Python Adapter:** Support for RustPython packed as WASM.
 - [ ] **Language-Agnostic CLI:** Gojinn build command to auto-detect language.
-
-## 🟠 Phase 5: Stateful Serverless (Host Capabilities)
-*Solve the "Database Latency" problem.*
-
-- [ ] **Host-Managed DB Pool:** Expose Host DB connections (Postgres/MySQL) to WASM via Host Functions to prevent "Too Many Connections" errors.
-- [ ] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
-- [ ] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
 
 ## 🟤 Phase 6: Async & Event-Driven
 *Compete with AWS Lambda's event ecosystem.*
