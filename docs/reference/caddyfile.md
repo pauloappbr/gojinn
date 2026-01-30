@@ -11,6 +11,11 @@ gojinn <path_to_wasm_file> {
     pool_size    <int>
     env          <key> <value>
     args         <arg1> <arg2>...
+    
+    # Host Capabilities (Phase 4)
+    db_driver    <driver>
+    db_dsn       <connection_string>
+    debug_secret <secret>
 }
 ```
 
@@ -36,7 +41,9 @@ route {
 }
 ```
 
-## ### `<path_to_wasm_file>`
+## Parameters
+
+### `<path_to_wasm_file>`
 
 **Type:** `string`  
 **Required:** Yes
@@ -53,7 +60,7 @@ Sets the maximum execution time allowed for the function before the VM is forcib
 - **Syntax:** `timeout <duration>`
 - **Examples:** `100ms`, `2s`, `1m`
 
-⚠️ **Important:** If the function exceeds this time, Gojinn will interrupt execution immediately and return a 504 Gateway Timeout error (or 500 depending on the stage). This protects your server against infinite loops (`while true`) and CPU exhaustion.
+⚠️ **Important:** If the function exceeds this time, Gojinn will interrupt execution immediately and return a 504 Gateway Timeout error. This protects your server against infinite loops (`while true`) and CPU exhaustion.
 
 ### `memory_limit`
 
@@ -88,6 +95,26 @@ Passes command-line arguments to the WASM binary (accessible via `os.Args` in th
 
 - **Syntax:** `args <arg1> <arg2> ...`
 
+### `db_driver` & `db_dsn`
+
+Enables the Host-Managed Database Pool. Caddy establishes a connection pool to the database and shares it with WASM functions via the SDK. This prevents "Too Many Connections" errors typical in serverless architectures.
+
+- **Syntax:**
+  - `db_driver <postgres|mysql|sqlite>`
+  - `db_dsn <connection_string>`
+
+**Supported Drivers:**
+
+- **postgres** (Requires `github.com/lib/pq`)
+- **mysql** (Requires `github.com/go-sql-driver/mysql`)
+- **sqlite** (Requires `modernc.org/sqlite` - Embedded, zero-latency)
+
+### `debug_secret`
+
+Enables Secure Remote Debugging. When configured, any request containing the header `X-Gojinn-Debug` matching this secret will have internal function logs (written to Stderr) injected into the Response Header `X-Gojinn-Logs`.
+
+- **Syntax:** `debug_secret <string>`
+
 ## 📝 Configuration Examples
 
 ### Minimal Configuration
@@ -104,35 +131,35 @@ Passes command-line arguments to the WASM binary (accessible via `os.Args` in th
 }
 ```
 
-### Production Configuration (Robust)
+### Full Configuration (Database & Debugging)
 
 ```caddy
 {
     order gojinn last
-    admin :2019 # Required for Prometheus Metrics
 }
 
 :8080 {
-    handle /api/contact {
-        # Set header before passing to Gojinn
-        header Content-Type application/json
-
-        gojinn ./functions/contact.wasm {
-            # Kills slow processes (CPU Budgeting)
+    handle /api/users {
+        gojinn ./functions/users.wasm {
+            # Resource Limits
             timeout 2s 
-            
-            # Prevents memory leaks
             memory_limit 128MB 
+            pool_size 20
+            
+            # Database Connection (Postgres)
+            db_driver "postgres"
+            db_dsn "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
+            
+            # Or SQLite:
+            # db_driver "sqlite"
+            # db_dsn "./data.db"
 
-            # Optimizes for high traffic (Trade RAM for CPU speed)
-            pool_size 100
+            # Secure Debugging
+            # Curl example: curl -H "X-Gojinn-Debug: my-secret" ...
+            debug_secret "my-secret-123"
             
-            # Safely injects host environment credentials
-            env DB_HOST "10.0.0.5"
+            # Environment Variables
             env API_KEY {env.SECRET_API_KEY}
-            
-            # Enables verbose logging in function logs
-            args --debug --json-logs
         }
     }
 }
