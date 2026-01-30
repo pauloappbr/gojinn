@@ -1,56 +1,71 @@
-# 🧞 Gojinn
+# 🧞 Gojinn Documentation
 
-> **High-Performance Serverless Runtime for Caddy**
+> **A Sovereign, In-Process Serverless Runtime for Caddy**
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/caddyserver/caddy/v2.svg)](https://pkg.go.dev/github.com/pauloappbr/gojinn)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Wasm Engine](https://img.shields.io/badge/engine-wazero-purple)](https://wazero.io)
-[![Version](https://img.shields.io/badge/version-v0.4.1-blue)]()
+Gojinn is an **opinionated WebAssembly runtime** embedded directly into the Caddy web server.
 
-**Gojinn** is an *in-process serverless* runtime for the [Caddy](https://caddyserver.com) web server.
+It enables you to execute **untrusted, deterministic, sandboxed code** inside the HTTP request lifecycle — without containers, orchestration layers, or external control planes.
 
-It allows you to execute **Go**, **Rust**, **Zig**, and **C++** code (compiled to WebAssembly) directly in the HTTP request flow with **Host-Managed Capabilities** (Database, Key-Value Store, Logs).
-
-With the release of **v0.4.0**, Gojinn introduces the **Official SDK** and **Sidecar Database Support** (Postgres/MySQL/SQLite), enabling true stateful serverless applications.
+This documentation assumes the reader is comfortable with:
+- systems programming concepts
+- HTTP internals
+- WebAssembly / WASI fundamentals
 
 ---
 
-## 🚀 Why Gojinn?
+## 🧠 Core Design Invariant
 
-Traditional serverless introduces network latency. Gojinn brings computation closer to the data.
+> **All user code executes inside a deterministic, isolated, ephemeral WASM sandbox and is never trusted by default.**
 
-| Feature | Description |
-| :--- | :--- |
-| **⚡ Microsecond Latency** | JIT Caching & Buffer Pooling ensure execution in **< 1ms**. |
-| **🗄️ Zero-Latency DB** | **New:** Host-managed connection pools for Postgres, MySQL, and embedded SQLite. |
-| **🧠 In-Memory KV** | **New:** Ultra-fast Key-Value store shared across requests (great for counters/cache). |
-| **🏗️ Zero Infra** | No Docker daemon, no Kubernetes sidecars. It's just a Caddy plugin. |
-| **👁️ Observable** | Native support for **Prometheus Metrics**, **Tracing**, and **Secure Remote Debugging**. |
-| **🛡️ Secure** | Each request runs in a strict Sandbox via [Wazero](https://wazero.io). |
+This invariant shapes **every architectural decision** in Gojinn.
 
----
+If a feature violates this principle, it does not belong in the runtime.
 
-## Use Cases
-
-* **Stateful Edge Logic:** Rate limiters, counters, and caching layers using Gojinn KV.
-* **Database APIs:** Build REST/GraphQL endpoints querying SQL databases directly.
-* **Hypermedia/HTMX:** Server-Side Rendering of HTML fragments with zero overhead.
-* **Legacy Migration:** "Strangler Fig" pattern replacing monolith endpoints one by one.
+See:
+- [`GOVERNANCE.md`](../GOVERNANCE.md)
+- [`MANIFESTO.md`](../MANIFESTO.md)
 
 ---
 
-## Documentation
+## 🚀 Why Gojinn Exists
+
+Traditional serverless platforms optimize for **centralized scale**.  
+Gojinn optimizes for **local correctness**.
+
+| Capability | Description |
+|-----------|-------------|
+| ⚡ **In-Process Execution** | No network hops, no sidecars, no proxies. |
+| 🧠 **Deterministic Runtime** | Explicit CPU and memory limits. |
+| 🛡️ **Strong Isolation** | Every request runs in a fresh WASM sandbox. |
+| 🗄️ **Host-Managed State** | Databases and KV via explicit capabilities. |
+| 👁️ **First-Class Observability** | Metrics, tracing, and structured logs built-in. |
+
+---
+
+## 🧭 How to Navigate the Docs
 
 ### Getting Started
-* [⚡ Quick Start Guide](./getting-started/quickstart.md)
-* [📦 Installation](./getting-started/installation.md)
+Start here if this is your first time using Gojinn.
+- [Quickstart](./getting-started/quickstart.md)
+- [Installation](./getting-started/installation.md)
 
 ### Guides
-* [🛠️ Golang SDK & Examples](./guides/golang.md)
-* [🚢 Deployment & Operations](./guides/deployment.md) **(New)**
-* [🐞 Debugging & Observability](./guides/debugging.md)
+Practical usage and operations.
+- [Golang SDK](./guides/golang.md)
+- [Deployment & Operations](./guides/deployment.md)
+- [Debugging & Observability](./guides/debugging.md)
 
-### Deep Dive
-* [🏗 Architecture](./concepts/architecture.md)
-* [🔌 JSON Contract](./concepts/contract.md)
-* [📊 Benchmarks](./benchmark.md)
+### Concepts
+Deep architectural understanding.
+- [Architecture](./concepts/architecture.md)
+- [Execution Contract](./concepts/contract.md)
+
+### Reference
+Precise definitions.
+- [Benchmarks](./benchmark.md)
+- [Caddyfile Reference](./reference/caddyfile.md)
+
+---
+
+> Gojinn favors **correctness over convenience**.  
+> These docs reflect that philosophy.

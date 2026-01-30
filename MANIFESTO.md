@@ -1,46 +1,90 @@
 # ⚛️ The Gojinn Manifesto
 
-**Gojinn** is not just a plugin; it's an architectural thesis. 
+Gojinn is not a framework.  
+It is not a platform.  
+It is an **architectural stance**.
 
-While platforms like Cloudflare Workers are excellent, they impose strict constraints: vendor lock-in, networking overhead for local logic, and lack of control over the runtime environment.
-
-Gojinn is built for scenarios where **Sovereignty**, **Cost**, and **Latency** are non-negotiable.
-
-## 🛡️ Why Gojinn? (Killer Use Cases)
-
-### 1. Multi-tenant Compute on a Single Server
-**Scenario:** You host a SaaS with thousands of users, each needing custom rules or logic.
-* **The Problem:** Running thousands of Docker containers is impossible. Cloud functions charge per request and introduce latency.
-* **The Gojinn Solution:** Run 10,000+ isolated WASM functions on a single machine. 
-    * **Idle Cost:** $0.
-    * **Isolation:** Strict Sandbox.
-    * **Architecture:** No containers, just memory spaces.
-
-### 2. Compliance & Air-Gapped Environments
-**Scenario:** Banks, Government, and Critical Infrastructure.
-* **The Problem:** Data cannot leave the premises. Public clouds (AWS/Cloudflare) are regulatory nightmares.
-* **The Gojinn Solution:** 100% Self-hosted serverless.
-    * **Auditability:** You control the binary and the runtime.
-    * **Security:** Works offline, inside your VPC or bare metal.
-
-### 3. "In-Process" Middleware
-**Scenario:** High-performance payload validation, feature flags, or transformations.
-* **The Problem:** Sending traffic to an external "sidecar" or cloud function adds network hops (latency).
-* **The Gojinn Solution:** Logic executes *inside* the HTTP Request flow.
-    * **Latency:** Microseconds, not milliseconds.
-    * **Efficiency:** Zero network copy.
-
-### 4. True Polyglot (WASI-First)
-**Scenario:** Teams utilizing Go, Rust, Zig, or C++.
-* **The Problem:** Most edge platforms are JavaScript-centric. WASM is often a second-class citizen.
-* **The Gojinn Solution:** If it compiles to WASM/WASI, it runs. Stdin/Stdout is the universal API.
-
-### 5. Deterministic Resource Limits
-**Scenario:** Hard real-time constraints or abusive user protection.
-* **The Problem:** "CPU Time" in the cloud is abstract. You can't guarantee a kill-switch at exactly 50ms.
-* **The Gojinn Solution:** Explicit CPU instruction budgets and memory hard limits.
-    * **Promise:** No surprises. If a script loops, it dies immediately.
+Modern infrastructure favors abstraction, indirection, and control planes.
+Gojinn favors **determinism, locality, and sovereignty**.
 
 ---
 
-> *"The fastest function is the one that never leaves the process."*
+## 🧠 First Principles
+
+Gojinn is built on a single, non-negotiable idea:
+
+> **Untrusted code must be isolated, deterministic, and explicitly authorized.**
+
+Anything that weakens this principle does not belong in the runtime.
+
+---
+
+## 🛡️ Why Gojinn Exists
+
+Platforms like AWS Lambda or Cloudflare Workers solve global scale —
+at the cost of:
+- vendor lock-in
+- opaque execution models
+- network-induced latency
+- loss of runtime control
+
+Gojinn exists for environments where:
+- latency is measured in microseconds
+- infrastructure must be auditable
+- data cannot leave the machine
+- operators must understand the full stack
+
+---
+
+## 🎯 Killer Use Cases
+
+### 1. High-Density Multi-Tenant Compute
+Run thousands of isolated user functions on a single machine.
+- No containers
+- No idle cost
+- No scheduler wars
+
+### 2. Regulated & Air-Gapped Environments
+Banks, governments, critical infrastructure.
+- Fully self-hosted
+- Offline-capable
+- Auditable binaries
+
+### 3. In-Process Middleware
+Execute logic *inside* the HTTP request path.
+- Validation
+- Transformation
+- Feature flags
+
+No hops. No proxies. No sidecars.
+
+### 4. True WASI-First Polyglot
+If it compiles to WASM, it runs.
+- Go
+- Rust
+- Zig
+- C / C++
+
+Stdin/Stdout is the contract.
+
+### 5. Deterministic Resource Control
+Hard CPU and memory limits.
+- No “best effort”
+- No noisy neighbors
+- No surprise bills
+
+---
+
+## ❌ Explicit Non-Goals
+
+Gojinn will **not** become:
+- a container orchestrator
+- a Kubernetes abstraction
+- a general-purpose PaaS
+- a cloud control plane
+
+Complexity is not hidden — it is rejected.
+
+---
+
+> *“The fastest function is the one that never leaves the process.”*

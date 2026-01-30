@@ -1,97 +1,128 @@
-# 🗺️ Project Roadmap
+# 🗺️ Project Roadmap: The Sovereign Cloud
 
-This roadmap transforms Gojinn from a runtime into a Global Serverless Platform capable of replacing legacy stacks and scaling to the edge.
+>This roadmap describes optional and modular evolution paths.
+Not all phases are intended to live in the core runtime.
 
-## 🟢 Phase 0: Foundation
-*Establish Gojinn as a stable, deterministic, production-grade runtime*
 
+This roadmap transforms **Gojinn** from a high-performance runtime into a **Sovereign Cloud Platform**.
+Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernetes with a single, secure, and intelligent binary.
+
+---
+
+## 🏗️ PART I: THE FOUNDATION (Completed)
+*The Core Engine is stable, fast, and production-ready.*
+
+### 🟢 Phase 0: Foundation (DONE)
 - [x] **In-process WASM execution** via `wazero`.
 - [x] **Stdin / Stdout model** for request-response.
 - [x] **Zero idle memory** footprint.
 - [x] **Crash-safe execution** (panic isolation).
-- [x] **Explicit execution timeouts** configuration.
-- [x] **Memory limits** per execution.
-- [x] **Documentation:** Architecture deep-dive & Transparent benchmarks.
 
-## 🟡 Phase 1: Workers Parity
-*Allow conceptual migration from Cloudflare Workers without copying edge abstractions.*
+### 🟡 Phase 1: Workers Parity (DONE v0.1.0-alpha)
+- [x] **Structured HTTP Context:** JSON/Proto Context mapping.
+- [x] **Header Mutation & Status Codes.**
+- [x] **Per-route Binding** via Caddyfile.
 
-- [x] **Structured HTTP Context:** Pass Method, Headers, Path, and Query via structured JSON/Proto to Stdin.
-- [x] **Header Mutation:** Allow WASM to modify response headers.
-- [x] **Status Code Control:** Allow WASM to set HTTP 4xx/5xx codes.
-- [x] **Environment Variables:** Configuration per function.
-- [x] **Per-route Binding:** Map specific `.wasm` files to specific Caddy routes.
+### 🔵 Phase 2: Enterprise Observability (DONE v0.2.0)
+- [x] **Structured Logging Interface:** JSON logs for Datadog/Loki.
+- [x] **OpenTelemetry Tracing:** Distributed tracing context.
+- [x] **Prometheus Metrics:** Native duration and memory histograms.
+- [x] **CPU Budgeting:** Basic timeouts.
 
-## 🔵 Phase 2: Enterprise Observability & Limits (Completed v0.2.0)
-*Gain trust by proving reliability and giving developers "X-Ray vision".*
+### 🟣 Phase 3: High Performance (DONE v0.3.0)
+- [x] **VM Pooling (Worker Pool):** Reusable warm sandboxes (<1ms latency).
+- [x] **JIT Caching:** Global module compilation cache.
+- [x] **Benchmarks:** Verified performance against Docker.
 
-- [x] **Structured Logging Interface:** Implement host.Log(level, json) so WASM logs appear correctly structured in Datadog/Loki, not just as raw stdout text.
-- [x] **OpenTelemetry Tracing:** Inject traceparent context into WASM so calls can be traced from Frontend -> Caddy -> WASM -> Database in a single waterfall view.
-- [x] **Prometheus Metrics:** Expose native metrics: gojinn_function_duration_seconds and gojinn_active_sandboxes.
-- [x] **CPU Budgeting:** Strict metering to prevent infinite loops.
-- [x] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
+### 🟠 Phase 4: Host Capabilities (DONE v0.4.0)
+- [x] **Host-Managed DB Pool:** Postgres/MySQL connection multiplexing.
+- [x] **Gojinn KV:** In-memory key-value store.
+- [x] **SQLite Sidecar:** Zero-latency local database support.
+- [x] **Secure Debug Mode:** Browser-based debugging headers.
 
-## 🟣 Phase 3: High Performance & Trust (Completed v0.3.0)
-*Turn Gojinn into the fastest serverless runtime and prove it to legacy teams.*
+### 🔴 Phase 5: Production & Operations (DONE v0.5.0)
+- [x] **Optimized Build Pipeline:** Makefile for lean binaries.
+- [x] **Systemd Integration:** Native Linux service support.
+- [x] **Log Rotation:** Native Caddy log management.
+- [x] **Git-Push-to-Deploy:** Zero-downtime deployment scripts.
 
-### ⚙️ Core Engine (Performance)
-- [x] **VM Pooling (Worker Pool):** Implement a pool of "warm" `wazero` instances. Instead of destroying the VM after use, reset its memory and put it back in the pool.
-    - *Goal:* Drop latency from ~1ms to **micro-seconds**.
-- [x] **JIT Caching:** Ensure compiled modules are cached in memory globally (Singleton pattern), ensuring zero-compilation on hot paths.
+---
 
-### 📢 Adoption Strategy
-- [x] **The "Strangler Fig" Examples:** Create a folder /examples/legacy-integration showing how to put Gojinn in front of Java/Spring. *(Done in v0.2.1)*
-- [x] **Reproducible Benchmarks:** Public repo (gojinn-benchmarks) comparing Gojinn (Pooled) vs Docker vs Native Go.
-- [x] **"Dogfooding" Case Study:** Migrated `paulo.app.br` backend to Gojinn, reducing latency to <100ms and removing idle containers.
+## 🚀 PART II: THE EXPANSION (Current Focus)
+*Democratizing access and securing the perimeter.*
 
-## 🟠 Phase 4: Host Capabilities & Developer Experience (Completed v0.4.0)
-*Solve the "Database Latency" problem and embrace modern web patterns.*
+### 🟤 Phase 6: Polyglot Support (Active Priority)
+*Don't force users to learn Rust/Go. Support the ecosystem.*
+- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) for JS support.
+- [ ] **Python Adapter:** Support for RustPython/CPython packed as WASM.
+- [ ] **Language-Agnostic CLI:** Unified `gojinn build` command.
 
-- [x] **Secure Debug Mode:** Implement `X-Gojinn-Debug` header logic. If a secret matches, capture Stderr and inject it into Response Headers (`X-Logs`) for browser-based debugging.
-- [x] **HTMX & SSR Patterns:** Create official examples and helpers for returning HTML fragments from WASM (Go Templates/Rust) instead of JSON. Validate the "Hypermedia-Driven" architecture.
-- [x] **Host-Managed DB Pool:** Expose Host DB connections (Postgres/MySQL) to WASM via Host Functions to prevent "Too Many Connections" errors.
-- [x] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
-- [x] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
+### 🛡️ Phase 7: The Fortress (Security Hardening)
+*Mathematical guarantees against bad code and attacks.*
+- [ ] **Fuel Metering:** Deterministic CPU limits to prevent infinite loops.
+- [ ] **Memory Wall:** Strict per-sandbox RAM limits to prevent leaks.
+- [ ] **Capability-Based Security:** Explicit permissions (e.g., "Can this function access KV?").
+- [ ] **Secrets Management:** Encrypted ENV variables integration.
 
-## 🔴 Phase 5: Production & Operations (Completed v0.5.0)
-*Professionalize the deployment. Treat Gojinn as critical infrastructure.*
+### ⚡ Phase 8: Async & Event-Driven
+*Handling tasks beyond the HTTP request lifecycle.*
+- [ ] **Cron Triggers:** Native scheduler (`@every 5m`).
+- [ ] **Fire-and-Forget:** Async execution queue (Internal).
+- [ ] **Dead Letter Queues:** Automatic retries for failed background jobs.
 
-- [x] **Optimized Build Pipeline:** Makefile/Script to generate lean binaries for Linux (AMD64/ARM64).
-- [x] **Systemd Integration:** Create a `.service` file for auto-restart and log management.
-- [x] **Log Rotation:** Ensure Caddy logs don't fill the disk.
-- [x] **Git-Push-to-Deploy:** Simple hook or script to update the server based on Git tags.
+### 🧠 Phase 9: Edge AI Inference
+*Native Intelligence without external APIs.*
+- [ ] **Host LLM Bindings:** Embed `llama.cpp` to allow WASM to call Local AI.
+- [ ] **Zero-Copy Inference:** Shared memory between WASM and Model.
 
-## 🟤 Phase 6: Polyglot Support (Current Priority)
-*Expand the ecosystem. Don't force users to learn Rust.*
+---
 
-- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS).
-- [ ] **Python Adapter:** Support for RustPython packed as WASM.
-- [ ] **Language-Agnostic CLI:** Gojinn build command.
+## 🌐 PART III: THE SOVEREIGN CLOUD (Future)
+*Distributed systems, Blockchain, and Code Sovereignty.*
 
-## 🟤 Phase 7: Async & Event-Driven
-*Compete with AWS Lambda's event ecosystem.*
+### 🔗 Phase 10: Code Sovereignty
+*Trust, Verify, and Sign.*
+- [ ] **Cryptographic Signing:** Blockchain/Ledger integration to verify WASM authorship.
+- [ ] **Supply Chain Security:** Gojinn only runs modules signed by trusted keys.
+- [ ] **Immutable Registry:** Hash-based addressing for functions.
 
-- [ ] **Cron Triggers:** Native support for scheduling functions (@every 5m)
-- [ ] **Worker Pools (Async Mode):** "Fire-and-forget" support using internal Go channels.
-- [ ] **Queue Binding:** Internal buffer for async processing.
+### 🕸️ Phase 11: The Mesh (P2P Federation)
+*Scale without a master node.*
+- [ ] **P2P Discovery:** Gossip protocol (Memberlist/WireGuard) for node discovery.
+- [ ] **Cluster Storage:** Sync Certificates and KV across nodes.
+- [ ] **Edge Routing:** Automatic request routing to the nearest available node.
 
-## 🔴 Phase 8: Distributed & Edge Scale
-*Scale horizontally across regions effortlessly.*
+### 🎭 Phase 12: Stateful Actors
+*Real-time applications without external DBs.*
+- [ ] **Actor Model:** Durable Objects implementation (State lives in RAM/Disk).
+- [ ] **Websockets Support:** massive concurrent connections handling.
+- [ ] **Global Locking:** Distributed consistency for actors.
 
-- [ ] **Cluster Storage Support:** Document and support using caddy-storage-redis or consul to synchronize TLS certificates across multiple Gojinn nodes (Edge capability).
-- [ ] **OCI Registry Support:** Deploy functions by referencing container images (image: ghcr.io/user/func:v1) directly in Caddyfile (GitOps standard).
-- [ ] **Universal Runtime:** Same binary runs on Bare Metal, VPS, and Edge.
+---
 
-## 🚀 Future Horizons (Version 2.0)
-*Cutting-edge features for the next generation.*
+## 🔮 PART IV: THE NEXT GENERATION (Visionary)
+*Redefining Developer Experience.*
 
-- [ ] **Edge AI Inference:** Host-level bindings for LLM inference (llama.cpp), allowing WASM to call AI without overhead.
-- [ ] **Time-Travel Debugging:** Save WASM execution inputs to replay failed requests locally
+### ⏪ Phase 13: Time-Travel Debugging
+- [ ] **Deterministic Replay:** Record inputs to replay crashes locally.
+- [ ] **Snapshotting:** Save/Restore full VM state.
+
+### 🖥️ Phase 14: Gojinn Studio
+- [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
+- [ ] **Hot Patching:** Update variables via UI.
+
+### 🤖 Phase 15: The Agentic Interface (MCP)
+- [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
+- [ ] **Semantic Router:** Natural language routing to functions.
+
+### 💎 Phase 16: The Sync Engine (Local-First)
+- [ ] **SQLite Replication Protocol:** Sync browser-based SQLite with Server SQLite.
+- [ ] **CRDT Integration:** Conflict-free data merging for offline-first apps.
 
 ---
 
 ### ❌ Explicit Non-Goals
 To keep the project focused, we will **NOT** build:
-* Proprietary APIs or Vendor-specific abstractions.
-* Forced control planes or billing layers.
-* "Magic" networking or hidden overlays.
+* Proprietary/Vendor-locked APIs.
+* Replacement for heavy OS-level containers (Docker).
+* "Magic" opaque networking layers.
