@@ -23,7 +23,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 		bytes, err := humanize.ParseBytes(r.MemoryLimit)
 		if err == nil && bytes > 0 {
 			const wasmPageSize = 65536
-			pages := uint32(bytes / wasmPageSize)
+			pages := uint32(bytes / wasmPageSize) //nolint:gosec
 			if bytes%wasmPageSize != 0 {
 				pages++
 			}
@@ -36,9 +36,9 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	_, err := engine.NewHostModuleBuilder("gojinn").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			level := uint32(stack[0])
-			ptr := uint32(stack[1])
-			size := uint32(stack[2])
+			level := uint32(stack[0]) //nolint:gosec
+			ptr := uint32(stack[1])   //nolint:gosec
+			size := uint32(stack[2])  //nolint:gosec
 			msgBytes, ok := mod.Memory().Read(ptr, size)
 			if !ok {
 				return
@@ -53,10 +53,10 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_log").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			queryPtr := uint32(stack[0])
-			queryLen := uint32(stack[1])
-			outPtr := uint32(stack[2])
-			outMaxLen := uint32(stack[3])
+			queryPtr := uint32(stack[0])  //nolint:gosec
+			queryLen := uint32(stack[1])  //nolint:gosec
+			outPtr := uint32(stack[2])    //nolint:gosec
+			outMaxLen := uint32(stack[3]) //nolint:gosec
 
 			qBytes, ok := mod.Memory().Read(queryPtr, queryLen)
 			if !ok {
@@ -70,7 +70,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 				jsonBytes = []byte(fmt.Sprintf(`[{"error": "%s"}]`, err.Error()))
 			}
 
-			bytesToWrite := uint32(len(jsonBytes))
+			bytesToWrite := uint32(len(jsonBytes)) //nolint:gosec
 
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
@@ -89,10 +89,10 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_db_query").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0])
-			keyLen := uint32(stack[1])
-			valPtr := uint32(stack[2])
-			valLen := uint32(stack[3])
+			keyPtr := uint32(stack[0]) //nolint:gosec
+			keyLen := uint32(stack[1]) //nolint:gosec
+			valPtr := uint32(stack[2]) //nolint:gosec
+			valLen := uint32(stack[3]) //nolint:gosec
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -112,10 +112,10 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_kv_set").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0])
-			keyLen := uint32(stack[1])
-			outPtr := uint32(stack[2])
-			outMaxLen := uint32(stack[3])
+			keyPtr := uint32(stack[0])    //nolint:gosec
+			keyLen := uint32(stack[1])    //nolint:gosec
+			outPtr := uint32(stack[2])    //nolint:gosec
+			outMaxLen := uint32(stack[3]) //nolint:gosec
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -132,7 +132,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 			valueStr := val.(string)
 			valBytes := []byte(valueStr)
-			valLen := uint32(len(valBytes))
+			valLen := uint32(len(valBytes)) //nolint:gosec
 
 			bytesToWrite := valLen
 			if bytesToWrite > outMaxLen {

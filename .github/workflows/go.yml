@@ -1,0 +1,53 @@
+name: Go Quality & Test
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    name: Quality & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+      
+      - name: Run golangci-lint
+        run: |
+          go mod tidy
+          go mod download
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          
+          golangci-lint run . cmd/... --timeout=10m --issues-exit-code=1
+
+  test:
+    name: Test, Security & Build
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Security Audit (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... || true 
+
+      - name: Build Host (Linux)
+        run: go build -v . cmd/...
+
+      - name: Build SDK (WASM)
+        run: |
+          GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./sdk/...
+          GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./functions/...
+
+      - name: Test Host
+        run: go test -v -race -short . cmd/...

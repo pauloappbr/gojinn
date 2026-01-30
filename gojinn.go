@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(Gojinn{})
+	caddy.RegisterModule(&Gojinn{})
 	httpcaddyfile.RegisterHandlerDirective("gojinn", parseCaddyfile)
 }
 
@@ -39,7 +39,7 @@ type Gojinn struct {
 	enginePool chan *EnginePair
 }
 
-func (Gojinn) CaddyModule() caddy.ModuleInfo {
+func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.gojinn",
 		New: func() caddy.Module { return &Gojinn{} },

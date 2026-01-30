@@ -1,0 +1,28 @@
+run:
+  timeout: 10m
+  modules-download-mode: readonly
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+
+issues:
+  # O SEGREDO ESTÁ AQUI:
+  # Lista de pastas que o linter vai ignorar COMPLETAMENTE.
+  # Ele nem vai tentar ler os arquivos daqui, evitando erro de compilação.
+  exclude-dirs:
+    - functions
+    - sdk
+    - examples
+
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec

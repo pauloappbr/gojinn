@@ -1,5 +1,6 @@
 # 🧞 Gojinn
 [![Go Reference](https://pkg.go.dev/badge/github.com/caddyserver/caddy/v2.svg)](https://pkg.go.dev/github.com/pauloappbr/gojinn)
+![CI Status](https://github.com/pauloappbr/gojinn/actions/workflows/go.yml/badge.svg)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Wasm Engine](https://img.shields.io/badge/engine-wazero-purple)](https://wazero.io)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/pauloappbr)

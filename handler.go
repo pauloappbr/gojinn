@@ -92,7 +92,7 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	instance, err := pair.Runtime.InstantiateModule(ctx, pair.Code, config)
 
 	duration := time.Since(start).Seconds()
-	statusLabel := "200"
+	var statusLabel string
 
 	injectDebugLogs := func() {
 		if isDebug && debugLogBuf.Len() > 0 {
@@ -153,7 +153,9 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		}
 	}
 	rw.WriteHeader(respPayload.Status)
-	rw.Write([]byte(respPayload.Body))
+	if _, err := rw.Write([]byte(respPayload.Body)); err != nil {
+		r.logger.Error("failed to write response body", zap.Error(err))
+	}
 
 	return nil
 }
