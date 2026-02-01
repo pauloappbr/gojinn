@@ -67,11 +67,11 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Capability-Based Security:** Explicit permissions (File System Mounts).
 - [x] **Secrets Management:** ENV variables integration via Caddyfile.
 
-### 💾 Phase 8: Data Persistence
+### 💾 Phase 8: Data Persistence (DONE v0.8.0)
 *Functions need to remember things.*
-- [ ] **WASI-Virt Integration:** Virtualize file systems for persistent storage.
-- [ ] **SQLite Mounts:** Allow functions to request a private SQLite file per tenant.
-- [ ] **Object Storage Bindings:** Native S3-compatible interface for WASM.
+- [x] **WASI-Virt Integration:** Virtualize file systems for persistent storage.
+- [x] **SQLite Mounts:** Allow functions to request a private SQLite file per tenant.
+- [x] **Object Storage Bindings:** Native S3-compatible interface for WASM.
 
 ### ⚡ Phase 9: Async & Event-Driven
 *Handling tasks beyond the HTTP request lifecycle.*

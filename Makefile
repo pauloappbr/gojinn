@@ -47,6 +47,7 @@ build-funcs:
 	@echo "🐹 Building Go WASM functions..."
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/sql.wasm functions/sql/main.go || echo "⚠️ functions/sql not found, skipping"
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/counter.wasm functions/counter/main.go || echo "⚠️ functions/counter not found, skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/s3.wasm functions/s3/main.go || echo "⚠️ functions/s3 not found, skipping"
 
 # --- 3. Build Polyglot ---
 build-polyglot: download-runtimes

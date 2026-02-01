@@ -8,6 +8,7 @@ import (
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"go.uber.org/zap"
 )
 
 type EnginePair struct {
@@ -83,9 +84,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}),
-			[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32},
-			[]api.ValueType{api.ValueTypeI32}).
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_db_query").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -132,9 +131,8 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 			valueStr := val.(string)
 			valBytes := []byte(valueStr)
-			valLen := uint32(len(valBytes)) //nolint:gosec
+			bytesToWrite := uint32(len(valBytes)) //nolint:gosec
 
-			bytesToWrite := valLen
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
 			}
@@ -145,10 +143,70 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}),
-			[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32},
-			[]api.ValueType{api.ValueTypeI32}).
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_kv_get").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			keyPtr := uint32(stack[0])  //nolint:gosec
+			keyLen := uint32(stack[1])  //nolint:gosec
+			bodyPtr := uint32(stack[2]) //nolint:gosec
+			bodyLen := uint32(stack[3]) //nolint:gosec
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				stack[0] = 1
+				return
+			}
+			key := string(kBytes)
+
+			bBytes, ok := mod.Memory().Read(bodyPtr, bodyLen)
+			if !ok {
+				stack[0] = 1
+				return
+			}
+
+			err := r.s3Put(ctx, key, bBytes)
+			if err != nil {
+				r.logger.Error("s3 put failed", zap.Error(err))
+				stack[0] = 1
+			} else {
+				stack[0] = 0
+			}
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_s3_put").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			keyPtr := uint32(stack[0])    //nolint:gosec
+			keyLen := uint32(stack[1])    //nolint:gosec
+			outPtr := uint32(stack[2])    //nolint:gosec
+			outMaxLen := uint32(stack[3]) //nolint:gosec
+
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			key := string(kBytes)
+
+			valBytes, err := r.s3Get(ctx, key)
+			if err != nil {
+				r.logger.Error("s3 get failed", zap.Error(err))
+				stack[0] = 0
+				return
+			}
+
+			bytesToWrite := uint32(len(valBytes))
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+			}
+
+			if !mod.Memory().Write(outPtr, valBytes[:bytesToWrite]) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_s3_get").
 		Instantiate(ctxWazero)
 
 	if err != nil {

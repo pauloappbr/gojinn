@@ -39,6 +39,12 @@ type Gojinn struct {
 	metrics *gojinnMetrics
 
 	enginePool chan *EnginePair
+
+	S3Endpoint  string `json:"s3_endpoint,omitempty"`
+	S3Region    string `json:"s3_region,omitempty"`
+	S3Bucket    string `json:"s3_bucket,omitempty"`
+	S3AccessKey string `json:"s3_access_key,omitempty"`
+	S3SecretKey string `json:"s3_secret_key,omitempty"`
 }
 
 func (*Gojinn) CaddyModule() caddy.ModuleInfo {
