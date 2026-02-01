@@ -11,6 +11,8 @@ import (
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var m Gojinn
 	m.Env = make(map[string]string)
+	m.Mounts = make(map[string]string)
+
 	for h.Next() {
 		args := h.RemainingArgs()
 		if len(args) > 0 {
@@ -30,6 +32,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 						m.Env[key] = h.Val()
 					}
 				}
+			case "mount":
+				if h.NextArg() {
+					hostDir := h.Val()
+					if h.NextArg() {
+						guestDir := h.Val()
+						m.Mounts[hostDir] = guestDir
+					}
+				}
 			case "args":
 				m.Args = h.RemainingArgs()
 			case "timeout":
@@ -42,6 +52,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "memory_limit":
 				if h.NextArg() {
 					m.MemoryLimit = h.Val()
+				}
+			case "fuel_limit":
+				if h.NextArg() {
+					val, err := strconv.ParseUint(h.Val(), 10, 64)
+					if err == nil {
+						m.FuelLimit = val
+					}
 				}
 			case "pool_size":
 				if h.NextArg() {

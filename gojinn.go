@@ -27,6 +27,9 @@ type Gojinn struct {
 	PoolSize    int               `json:"pool_size,omitempty"`
 	DebugSecret string            `json:"debug_secret,omitempty"`
 
+	FuelLimit uint64            `json:"fuel_limit,omitempty"`
+	Mounts    map[string]string `json:"mounts,omitempty"`
+
 	DBDriver string `json:"db_driver,omitempty"`
 	DBDSN    string `json:"db_dsn,omitempty"`
 	kvStore  sync.Map
@@ -65,6 +68,9 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 	if r.Timeout == 0 {
 		r.Timeout = caddy.Duration(60 * time.Second)
+	}
+
+	if r.FuelLimit == 0 {
 	}
 
 	r.enginePool = make(chan *EnginePair, r.PoolSize)

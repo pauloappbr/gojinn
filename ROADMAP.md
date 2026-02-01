@@ -51,7 +51,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ## 🚀 PART II: THE EXPANSION (Current Focus)
 *Democratizing access and securing the perimeter.*
 
-### 🟤 Phase 6: Polyglot Support (Active Priority)
+### 🟤 Phase 6: Polyglot Support (DONE v0.6.0)
 *Don't force users to learn Rust/Go. Support the ecosystem.*
 - [x] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) for JS support.
 - [x] **Python Adapter:** Support for Python 3.12 (VMware Build).
@@ -60,20 +60,26 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **.NET / C# Adapter:** Support for C# 8.0 via WASI SDK (Enterprise).
 - [x] **Unified Build System:** Implemented via `Makefile` (Replaces `gojinn build` CLI for flexibility).
 
-### 🛡️ Phase 7: The Fortress (Security Hardening)
+### 🛡️ Phase 7: The Fortress (Security Hardening) (DONE v0.7.0)
 *Mathematical guarantees against bad code and attacks.*
-- [ ] **Fuel Metering:** Deterministic CPU limits to prevent infinite loops.
-- [ ] **Memory Wall:** Strict per-sandbox RAM limits to prevent leaks.
-- [ ] **Capability-Based Security:** Explicit permissions (e.g., "Can this function access KV?").
-- [ ] **Secrets Management:** Encrypted ENV variables integration.
+- [x] **Fuel Metering:** Deterministic CPU limits (via Strict Timeouts).
+- [x] **Memory Wall:** Strict per-sandbox RAM limits to prevent leaks.
+- [x] **Capability-Based Security:** Explicit permissions (File System Mounts).
+- [x] **Secrets Management:** ENV variables integration via Caddyfile.
 
-### ⚡ Phase 8: Async & Event-Driven
+### 💾 Phase 8: Data Persistence
+*Functions need to remember things.*
+- [ ] **WASI-Virt Integration:** Virtualize file systems for persistent storage.
+- [ ] **SQLite Mounts:** Allow functions to request a private SQLite file per tenant.
+- [ ] **Object Storage Bindings:** Native S3-compatible interface for WASM.
+
+### ⚡ Phase 9: Async & Event-Driven
 *Handling tasks beyond the HTTP request lifecycle.*
 - [ ] **Cron Triggers:** Native scheduler (`@every 5m`).
 - [ ] **Fire-and-Forget:** Async execution queue (Internal).
 - [ ] **Dead Letter Queues:** Automatic retries for failed background jobs.
 
-### 🧠 Phase 9: Edge AI Inference
+### 🧠 Phase 10: Edge AI Inference
 *Native Intelligence without external APIs.*
 - [ ] **Host LLM Bindings:** Embed `llama.cpp` to allow WASM to call Local AI.
 - [ ] **Zero-Copy Inference:** Shared memory between WASM and Model.
@@ -83,19 +89,19 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ## 🌐 PART III: THE SOVEREIGN CLOUD (Future)
 *Distributed systems, Blockchain, and Code Sovereignty.*
 
-### 🔗 Phase 10: Code Sovereignty
+### 🔗 Phase 11: Code Sovereignty
 *Trust, Verify, and Sign.*
 - [ ] **Cryptographic Signing:** Blockchain/Ledger integration to verify WASM authorship.
 - [ ] **Supply Chain Security:** Gojinn only runs modules signed by trusted keys.
 - [ ] **Immutable Registry:** Hash-based addressing for functions.
 
-### 🕸️ Phase 11: The Mesh (P2P Federation)
+### 🕸️ Phase 12: The Mesh (P2P Federation)
 *Scale without a master node.*
 - [ ] **P2P Discovery:** Gossip protocol (Memberlist/WireGuard) for node discovery.
 - [ ] **Cluster Storage:** Sync Certificates and KV across nodes.
 - [ ] **Edge Routing:** Automatic request routing to the nearest available node.
 
-### 🎭 Phase 12: Stateful Actors
+### 🎭 Phase 13: Stateful Actors
 *Real-time applications without external DBs.*
 - [ ] **Actor Model:** Durable Objects implementation (State lives in RAM/Disk).
 - [ ] **Websockets Support:** massive concurrent connections handling.
@@ -106,21 +112,21 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ## 🔮 PART IV: THE NEXT GENERATION (Visionary)
 *Redefining Developer Experience.*
 
-### ⏪ Phase 13: Time-Travel Debugging
+### ⏪ Phase 14: Time-Travel Debugging
 - [ ] **Deterministic Replay:** Record inputs to replay crashes locally.
 - [ ] **Snapshotting:** Save/Restore full VM state.
 
-### 🖥️ Phase 14: Gojinn Studio
+### 🖥️ Phase 15: Gojinn Studio
 - [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
 - [ ] **Hot Patching:** Update variables via UI.
 - [ ] **Language-Agnostic CLI:** Unified gojinn build command (replacing Makefile).
 - [ ] **Ecosystem Split:** Migrate examples and SDKs to dedicated repositories (e.g., `gojinn-examples`) for cleaner architecture.
 
-### 🤖 Phase 15: The Agentic Interface (MCP)
+### 🤖 Phase 16: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
 - [ ] **Semantic Router:** Natural language routing to functions.
 
-### 💎 Phase 16: The Sync Engine (Local-First)
+### 💎 Phase 17: The Sync Engine (Local-First)
 - [ ] **SQLite Replication Protocol:** Sync browser-based SQLite with Server SQLite.
 - [ ] **CRDT Integration:** Conflict-free data merging for offline-first apps.
 

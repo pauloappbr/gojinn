@@ -82,6 +82,14 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	fullArgs := append([]string{"python"}, r.Args...)
 
+	fsConfig := wazero.NewFSConfig()
+
+	if len(r.Mounts) > 0 {
+		for hostDir, guestDir := range r.Mounts {
+			fsConfig = fsConfig.WithDirMount(hostDir, guestDir)
+		}
+	}
+
 	config := wazero.NewModuleConfig().
 		WithStdout(stdoutBuf).
 		WithStderr(stderrTarget).
@@ -90,7 +98,7 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		WithSysWalltime().
 		WithSysNanotime().
 		WithRandSource(rand.Reader).
-		WithFSConfig(wazero.NewFSConfig().WithDirMount(".", "/"))
+		WithFSConfig(fsConfig)
 
 	for k, v := range r.Env {
 		config = config.WithEnv(k, v)
