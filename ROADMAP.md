@@ -72,18 +72,18 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **SQLite Mounts:** Allow functions to request a private SQLite file per tenant.
 - [x] **Object Storage Bindings:** Native S3-compatible interface for WASM (MinIO/AWS).
 
-### ⚡ Phase 9: Async & Event-Driven
+### ⚡ Phase 9: Async & Event-Driven (DONE v0.9.0)
 *Handling tasks beyond the HTTP request lifecycle.*
 - [x] **Cron Triggers:** Native scheduler (`@every 5m`).
 - [x] **Fire-and-Forget:** Async execution queue (Internal).
 - [x] **Dead Letter Queues:** Automatic retries for failed background jobs.
 - [x] **MQTT/Webhook Triggers:** Connect IoT and external events to functions.
 
-### 🧠 Phase 10: Hybrid AI Engine
+### 🧠 Phase 10: Hybrid AI Engine (DONE v0.10.0)
 *Democratizing AI access within the sandbox.*
-- [ ] **Host AI Bindings:** Unified interface for WASM to call LLMs.
-- [ ] **Provider Agnostic:** Support via Caddyfile for OpenAI, Anthropic, Gemini, and **Ollama (Local/Free)**.
-- [ ] **Smart Caching:** Semantic caching to reduce inference costs and latency.
+- [x] **Host AI Bindings:** Unified interface for WASM to call LLMs.
+- [x] **Provider Agnostic:** Support via Caddyfile for OpenAI, Anthropic, Gemini, and **Ollama (Local/Free)**.
+- [x] **Smart Caching:** Semantic caching to reduce inference costs and latency.
 
 ---
 
@@ -92,10 +92,10 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ### 🚦 Phase 11: The Gatekeeper (Traffic Control)
 *Protecting the Sovereign Cloud from abuse.*
-- [ ] **Tenant Identity:** Simple Authentication (Basic Auth / Bearer Token) via Caddyfile.
-- [ ] **Rate Limiting:** Per-function or per-token request limits.
-- [ ] **Egress Filtering:** Control which external URLs functions can access.
-- [ ] **CORS Management:** Granular browser access control.
+- [x] **Tenant Identity:** Simple Authentication (Basic Auth / Bearer Token) via Caddyfile.
+- [x] **Rate Limiting:** Per-function or per-token request limits.
+- [x] **Egress Filtering:** Control which external URLs functions can access.
+- [x] **CORS Management:** Granular browser access control.
 
 ### 📊 Phase 12: The Accountant (Telemetry & Quotas)
 *Knowing where resources are going.*

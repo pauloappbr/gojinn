@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,54 @@ var bufferPool = sync.Pool{
 
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
 	start := time.Now()
+
+	origin := req.Header.Get("Origin")
+	if len(r.CorsOrigins) > 0 && origin != "" {
+		allowed := false
+		for _, o := range r.CorsOrigins {
+			if o == "*" || o == origin {
+				allowed = true
+				break
+			}
+		}
+
+		if allowed {
+			rw.Header().Set("Access-Control-Allow-Origin", origin)
+			rw.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+			rw.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Gojinn-Debug, traceparent")
+			rw.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		if req.Method == "OPTIONS" {
+			rw.WriteHeader(http.StatusOK)
+			return nil
+		}
+	}
+
+	if len(r.APIKeys) > 0 {
+		clientKey := req.Header.Get("X-API-Key")
+
+		if clientKey == "" {
+			authHeader := req.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				clientKey = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		authorized := false
+		for _, k := range r.APIKeys {
+			if clientKey == k {
+				authorized = true
+				break
+			}
+		}
+
+		if !authorized {
+			r.logger.Warn("🔒 Access Denied: Invalid or missing API Key", zap.String("ip", req.RemoteAddr))
+			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("unauthorized: invalid api key"))
+		}
+	}
+
 	r.metrics.active.WithLabelValues(r.Path).Inc()
 	defer r.metrics.active.WithLabelValues(r.Path).Dec()
 

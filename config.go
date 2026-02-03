@@ -8,13 +8,11 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// Estrutura para Cron Jobs
 type CronJob struct {
 	Schedule string `json:"schedule"`
 	WasmFile string `json:"wasm_file"`
 }
 
-// Estrutura para Assinaturas MQTT
 type MQTTSub struct {
 	Topic    string `json:"topic"`
 	WasmFile string `json:"wasm_file"`
@@ -24,9 +22,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	var m Gojinn
 	m.Env = make(map[string]string)
 	m.Mounts = make(map[string]string)
-	// Inicializa slices
 	m.CronJobs = []CronJob{}
 	m.MQTTSubs = []MQTTSub{}
+
+	m.AllowedHosts = []string{}
+	m.APIKeys = []string{}
+	m.CorsOrigins = []string{}
 
 	for h.Next() {
 		args := h.RemainingArgs()
@@ -115,7 +116,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					m.S3SecretKey = h.Val()
 				}
 
-			// Parsing do CRON
 			case "cron":
 				var job CronJob
 				if !h.NextArg() {
@@ -128,7 +128,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				job.WasmFile = h.Val()
 				m.CronJobs = append(m.CronJobs, job)
 
-			// Parsing do MQTT
 			case "mqtt_broker":
 				if h.NextArg() {
 					m.MQTTBroker = h.Val()
@@ -157,7 +156,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				sub.WasmFile = h.Val()
 				m.MQTTSubs = append(m.MQTTSubs, sub)
 
-			// --- NOVO: AI Engine (Phase 10) ---
 			case "ai_provider":
 				if h.NextArg() {
 					m.AIProvider = h.Val()
@@ -173,6 +171,19 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "ai_token":
 				if h.NextArg() {
 					m.AIToken = h.Val()
+				}
+
+			case "api_key":
+				if h.NextArg() {
+					m.APIKeys = append(m.APIKeys, h.Val())
+				}
+			case "allow_host":
+				if h.NextArg() {
+					m.AllowedHosts = append(m.AllowedHosts, h.Val())
+				}
+			case "cors_origin":
+				if h.NextArg() {
+					m.CorsOrigins = append(m.CorsOrigins, h.Val())
 				}
 			}
 		}

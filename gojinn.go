@@ -3,14 +3,16 @@ package gojinn
 import (
 	"bytes"
 	"context"
-	"crypto/sha256" // NOVO: Para o hash do cache
+	"crypto/sha256"
 	"database/sql"
-	"encoding/hex" // NOVO: Para string do hash
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,26 +56,25 @@ type Gojinn struct {
 	S3AccessKey string `json:"s3_access_key,omitempty"`
 	S3SecretKey string `json:"s3_secret_key,omitempty"`
 
-	// Cron Jobs
-	CronJobs  []CronJob  `json:"cron_jobs,omitempty"`
-	scheduler *cron.Cron // interno
+	CronJobs  []CronJob `json:"cron_jobs,omitempty"`
+	scheduler *cron.Cron
 
-	// MQTT Config
-	MQTTBroker   string      `json:"mqtt_broker,omitempty"`
-	MQTTClientID string      `json:"mqtt_client_id,omitempty"`
-	MQTTUsername string      `json:"mqtt_username,omitempty"`
-	MQTTPassword string      `json:"mqtt_password,omitempty"`
-	MQTTSubs     []MQTTSub   `json:"mqtt_subs,omitempty"`
-	mqttClient   mqtt.Client // interno
+	MQTTBroker   string    `json:"mqtt_broker,omitempty"`
+	MQTTClientID string    `json:"mqtt_client_id,omitempty"`
+	MQTTUsername string    `json:"mqtt_username,omitempty"`
+	MQTTPassword string    `json:"mqtt_password,omitempty"`
+	MQTTSubs     []MQTTSub `json:"mqtt_subs,omitempty"`
+	mqttClient   mqtt.Client
 
-	// AI Config
 	AIProvider string `json:"ai_provider,omitempty"`
 	AIModel    string `json:"ai_model,omitempty"`
 	AIEndpoint string `json:"ai_endpoint,omitempty"`
 	AIToken    string `json:"ai_token,omitempty"`
+	aiCache    sync.Map
 
-	// NOVO: Cache de IA
-	aiCache sync.Map
+	APIKeys      []string `json:"api_keys,omitempty"`
+	AllowedHosts []string `json:"allowed_hosts,omitempty"`
+	CorsOrigins  []string `json:"cors_origins,omitempty"`
 }
 
 func (*Gojinn) CaddyModule() caddy.ModuleInfo {
@@ -94,7 +95,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
-	// 1. Cron
 	if len(r.CronJobs) > 0 {
 		r.scheduler = cron.New(cron.WithSeconds())
 		for _, job := range r.CronJobs {
@@ -110,7 +110,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.scheduler.Start()
 	}
 
-	// 2. MQTT
 	if r.MQTTBroker != "" {
 		opts := mqtt.NewClientOptions()
 		opts.AddBroker(r.MQTTBroker)
@@ -149,7 +148,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	// Defaults & Worker Pool
 	if r.PoolSize <= 0 {
 		r.PoolSize = 2
 	}
@@ -210,8 +208,6 @@ func (r *Gojinn) Cleanup() error {
 	return nil
 }
 
-// --- AI HELPER FUNCTIONS (Phase 10) ---
-
 type AIRequest struct {
 	Model    string      `json:"model"`
 	Messages []AIMessage `json:"messages"`
@@ -229,7 +225,6 @@ type AIResponse struct {
 	} `json:"choices"`
 }
 
-// askAI com Caching
 func (g *Gojinn) askAI(prompt string) (string, error) {
 	provider := g.AIProvider
 	if provider == "" {
@@ -245,29 +240,49 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 		}
 	}
 
-	// 1. SMART CACHING CHECK
-	// Gera um hash único para a combinação de Modelo + Prompt
 	cacheKey := fmt.Sprintf("%s:%s", model, hashString(prompt))
-
 	if cachedVal, ok := g.aiCache.Load(cacheKey); ok {
 		g.logger.Debug("🧠 AI Cache Hit", zap.String("key", cacheKey))
 		return cachedVal.(string), nil
 	}
 
-	// 2. Configura Endpoint
 	endpoint := g.AIEndpoint
 	if endpoint == "" {
 		if provider == "ollama" {
 			endpoint = "http://localhost:11434/v1/chat/completions"
 		} else if provider == "gemini" {
-			// Placeholder para Gemini (requer estrutura JSON diferente geralmente)
 			endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 		} else {
 			endpoint = "https://api.openai.com/v1/chat/completions"
 		}
 	}
 
-	// 3. Monta Request (Compatível com OpenAI/Ollama)
+	if len(g.AllowedHosts) > 0 {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return "", fmt.Errorf("invalid endpoint url")
+		}
+
+		allowed := false
+		hostname := u.Hostname()
+
+		if provider == "ollama" && (hostname == "localhost" || hostname == "127.0.0.1") {
+			allowed = true
+		} else {
+			for _, host := range g.AllowedHosts {
+				if strings.Contains(hostname, host) {
+					allowed = true
+					break
+				}
+			}
+		}
+
+		if !allowed {
+			g.logger.Warn("🚫 Egress Blocked", zap.String("target", hostname), zap.Strings("allowed", g.AllowedHosts))
+			return "", fmt.Errorf("egress denied to %s", hostname)
+		}
+	}
+
 	reqBody := AIRequest{
 		Model:  model,
 		Stream: false,
@@ -308,8 +323,6 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 	if len(aiResp.Choices) > 0 {
 		responseContent := aiResp.Choices[0].Message.Content
 
-		// 4. SMART CACHING SAVE
-		// Salva a resposta no cache para o futuro
 		g.aiCache.Store(cacheKey, responseContent)
 		g.logger.Debug("🧠 AI Cache Stored", zap.String("key", cacheKey))
 
@@ -319,7 +332,6 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 	return "", fmt.Errorf("AI returned no response")
 }
 
-// Helper para gerar Hash
 func hashString(s string) string {
 	h := sha256.New()
 	h.Write([]byte(s))
