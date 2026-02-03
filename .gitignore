@@ -2,6 +2,7 @@
 # Binaries / Executables
 #######################################
 gojinn
+!gojinn/
 gojinn-server
 gojinn-signer
 caddy
