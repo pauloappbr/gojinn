@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 
+	"github.com/pauloappbr/gojinn/pkg/mesh"
 	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
 
@@ -42,6 +43,12 @@ type Gojinn struct {
 
 	TrustedKeys    []string `json:"trusted_keys,omitempty"`
 	SecurityPolicy string   `json:"security_policy,omitempty"`
+
+	// --- 🕸️ MESH / CLUSTER (Fase 14) ---
+	ClusterPort   int      `json:"cluster_port,omitempty"`
+	ClusterSeeds  []string `json:"cluster_seeds,omitempty"`
+	ClusterSecret string   `json:"cluster_secret,omitempty"`
+	meshNode      *mesh.Node
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`
@@ -146,6 +153,43 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
+	// --- 🕸️ MESH INIT (Phase 14) ---
+	if r.ClusterPort > 0 {
+		r.logger.Info("🕸️ Initializing Mesh Node", zap.Int("port", r.ClusterPort))
+
+		// 1. NewNode agora recebe os metadados iniciais (Funções e Porta API)
+		node, err := mesh.NewNode(r.ClusterPort, r.ClusterPort, r.ClusterSeeds, r.ClusterSecret, []string{r.Path}, 8080)
+		if err != nil {
+			return fmt.Errorf("failed to start mesh: %w", err)
+		}
+		r.meshNode = node
+
+		// 2. Callback de Sincronização: O que fazer quando chegar um KV de fora?
+		r.meshNode.OnKVUpdate = func(key, value string) {
+			r.logger.Debug("🕸️ Mesh KV Sync (Remote Update)", zap.String("key", key), zap.String("val_size", fmt.Sprintf("%d bytes", len(value))))
+			r.kvStore.Store(key, value)
+		}
+
+		// Log periódico de topologia
+		go func() {
+			time.Sleep(2 * time.Second)
+			ticker := time.NewTicker(30 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if r.meshNode != nil && r.meshNode.List != nil {
+						peers := r.meshNode.GetPeers()
+						r.logger.Info("🕸️ Mesh Topology",
+							zap.Int("members_count", len(peers)),
+							zap.Strings("members", peers))
+					}
+				}
+			}
+		}()
+	}
+
 	if len(r.CronJobs) > 0 {
 		r.scheduler = cron.New(cron.WithSeconds())
 		for _, job := range r.CronJobs {
@@ -244,6 +288,12 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 }
 
 func (r *Gojinn) Cleanup() error {
+	// --- 🕸️ MESH SHUTDOWN ---
+	if r.meshNode != nil {
+		r.logger.Info("🕸️ Leaving Mesh Cluster...")
+		r.meshNode.Shutdown()
+	}
+
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
 		r.mqttClient.Disconnect(250)
 	}
@@ -259,6 +309,7 @@ func (r *Gojinn) Cleanup() error {
 	return nil
 }
 
+// ... (Resto do arquivo permanece inalterado) ...
 func (r *Gojinn) getLimiter(key string) *rate.Limiter {
 	r.limitersMu.Lock()
 	defer r.limitersMu.Unlock()

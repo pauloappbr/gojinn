@@ -38,11 +38,12 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
 
 	_, err := engine.NewHostModuleBuilder("gojinn").
+		// LOGGING
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			level := uint32(stack[0]) //nolint:gosec
-			ptr := uint32(stack[1])   //nolint:gosec
-			size := uint32(stack[2])  //nolint:gosec
+			level := uint32(stack[0])
+			ptr := uint32(stack[1])
+			size := uint32(stack[2])
 			msgBytes, ok := mod.Memory().Read(ptr, size)
 			if !ok {
 				return
@@ -55,12 +56,14 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_log").
+
+		// DB QUERY
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			queryPtr := uint32(stack[0])  //nolint:gosec
-			queryLen := uint32(stack[1])  //nolint:gosec
-			outPtr := uint32(stack[2])    //nolint:gosec
-			outMaxLen := uint32(stack[3]) //nolint:gosec
+			queryPtr := uint32(stack[0])
+			queryLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
 
 			qBytes, ok := mod.Memory().Read(queryPtr, queryLen)
 			if !ok {
@@ -74,7 +77,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 				jsonBytes = []byte(fmt.Sprintf(`[{"error": "%s"}]`, err.Error()))
 			}
 
-			bytesToWrite := uint32(len(jsonBytes)) //nolint:gosec
+			bytesToWrite := uint32(len(jsonBytes))
 
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
@@ -89,12 +92,14 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_db_query").
+
+		// KV SET (COM MESH BROADCAST 🕸️)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0]) //nolint:gosec
-			keyLen := uint32(stack[1]) //nolint:gosec
-			valPtr := uint32(stack[2]) //nolint:gosec
-			valLen := uint32(stack[3]) //nolint:gosec
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			valPtr := uint32(stack[2])
+			valLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -108,16 +113,23 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 			val := string(vBytes)
 
+			// 1. Salva Local
 			r.kvStore.Store(key, val)
 
+			// 2. Broadcast P2P
+			if r.meshNode != nil {
+				r.meshNode.BroadcastKV(key, val)
+			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_kv_set").
+
+		// KV GET (CORRIGIDO PARA I64)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0])    //nolint:gosec
-			keyLen := uint32(stack[1])    //nolint:gosec
-			outPtr := uint32(stack[2])    //nolint:gosec
-			outMaxLen := uint32(stack[3]) //nolint:gosec
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -128,13 +140,14 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 			val, ok := r.kvStore.Load(key)
 			if !ok {
-				stack[0] = uint64(0xFFFFFFFF)
+				// Not Found: Retorna -1 (em uint64 é 0xFFFFFFFFFFFFFFFF)
+				stack[0] = 0xFFFFFFFFFFFFFFFF
 				return
 			}
 
 			valueStr := val.(string)
 			valBytes := []byte(valueStr)
-			bytesToWrite := uint32(len(valBytes)) //nolint:gosec
+			bytesToWrite := uint32(len(valBytes))
 
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
@@ -146,14 +159,16 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}). // <--- I64 AQUI
 		Export("host_kv_get").
+
+		// S3 PUT
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0])  //nolint:gosec
-			keyLen := uint32(stack[1])  //nolint:gosec
-			bodyPtr := uint32(stack[2]) //nolint:gosec
-			bodyLen := uint32(stack[3]) //nolint:gosec
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			bodyPtr := uint32(stack[2])
+			bodyLen := uint32(stack[3])
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
 				stack[0] = 1
@@ -176,12 +191,14 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_put").
+
+		// S3 GET
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			keyPtr := uint32(stack[0])    //nolint:gosec
-			keyLen := uint32(stack[1])    //nolint:gosec
-			outPtr := uint32(stack[2])    //nolint:gosec
-			outMaxLen := uint32(stack[3]) //nolint:gosec
+			keyPtr := uint32(stack[0])
+			keyLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -210,6 +227,8 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_get").
+
+		// ENQUEUE JOB
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			filePtr := uint32(stack[0])
@@ -239,6 +258,8 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = 0
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_enqueue").
+
+		// ASK AI (CORRIGIDO PARA I64)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			promptPtr := uint32(stack[0])
@@ -273,7 +294,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}). // <--- I64 AQUI
 		Export("host_ask_ai").
 		Instantiate(ctxWazero)
 
@@ -318,6 +339,7 @@ func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
 }
 
 func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
+	// 🛡️ SECURITY UPDATE (Fase 13):
 	wasmBytes, err := r.loadWasmSecurely(wasmFile)
 	if err != nil {
 		return fmt.Errorf("security check failed for async job: %w", err)

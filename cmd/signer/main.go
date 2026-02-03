@@ -10,47 +10,60 @@ import (
 
 func main() {
 	action := flag.String("action", "", "gen-keys | sign")
-	keyName := flag.String("name", "default-key", "Key name (for gen-keys)")
-	privateKeyPath := flag.String("key", "", "Private key path (for sign)")
-	wasmPath := flag.String("file", "", "WASM file to sign")
+	name := flag.String("name", "gojinn", "Nome da chave (para gen-keys)")
+	keyFile := flag.String("key", "", "Caminho da chave privada (para sign)")
+	wasmFile := flag.String("file", "", "Arquivo wasm para assinar")
 	flag.Parse()
 
 	switch *action {
 	case "gen-keys":
-		err := sovereign.GenerateKeys(*keyName)
+		err := sovereign.GenerateKeys(*name)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("✅ Chaves geradas: %s.pub e %s.priv\n", *name, *name)
+		pubBytes, _ := os.ReadFile(*name + ".pub")
+		fmt.Printf("📋 PUBLIC KEY (Copie para o Caddyfile):\n%s\n", string(pubBytes))
+
+	case "sign":
+		if *keyFile == "" || *wasmFile == "" {
+			panic("Precisa de --key e --file")
+		}
+
+		// Ler chave privada
+		privHex, err := os.ReadFile(*keyFile)
+		if err != nil {
+			panic(fmt.Errorf("falha ao ler chave privada: %w", err))
+		}
+		privKeyBytes, err := sovereign.ParsePrivateKey(string(privHex))
 		if err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("✅ Keys generated: %s.pub and %s.priv\n", *keyName, *keyName)
-
-		pubBytes, _ := os.ReadFile(*keyName + ".pub")
-		fmt.Printf("📋 PUBLIC KEY (Copy to your config file):\n%s\n", string(pubBytes))
-
-	case "sign":
-		if *privateKeyPath == "" || *wasmPath == "" {
-			panic("Both --key and --file are required")
+		// Ler Wasm (CORREÇÃO AQUI: Tratamento de Erro)
+		wasmBytes, err := os.ReadFile(*wasmFile)
+		if err != nil {
+			panic(fmt.Errorf("ARQUIVO WASM NÃO ENCONTRADO ou ilegível: %w", err))
 		}
 
-		privHex, _ := os.ReadFile(*privateKeyPath)
-		privKeyBytes, _ := sovereign.ParsePrivateKey(string(privHex))
+		if len(wasmBytes) == 0 {
+			panic("O arquivo WASM está vazio! Verifique o build.")
+		}
 
-		wasmBytes, _ := os.ReadFile(*wasmPath)
-
+		// Assinar
 		signedBytes, err := sovereign.SignWasm(wasmBytes, privKeyBytes)
 		if err != nil {
 			panic(err)
 		}
 
-		err = os.WriteFile(*wasmPath, signedBytes, 0644)
+		// Sobrescrever
+		err = os.WriteFile(*wasmFile, signedBytes, 0644)
 		if err != nil {
 			panic(err)
 		}
-
-		fmt.Printf("🔐 File successfully signed: %s\n", *wasmPath)
+		fmt.Printf("🔐 Arquivo assinado com sucesso: %s (Tamanho: %d bytes)\n", *wasmFile, len(signedBytes))
 
 	default:
-		fmt.Println("Usage: go run main.go --action=gen-keys --name=mykey")
-		fmt.Println("Usage: go run main.go --action=sign --key=mykey.priv --file=app.wasm")
+		fmt.Println("Use: --action=gen-keys ou --action=sign")
 	}
 }

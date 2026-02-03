@@ -30,6 +30,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.CorsOrigins = []string{}
 
 	m.TrustedKeys = []string{}
+	m.ClusterSeeds = []string{} // Inicializa seeds vazio
 
 	m.RateLimit = 0
 	m.RateBurst = 0
@@ -121,6 +122,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					m.S3SecretKey = h.Val()
 				}
 
+			// --- SECURITY BLOCK (Fase 13) ---
 			case "security":
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					switch h.Val() {
@@ -134,6 +136,30 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 							return nil, h.Err("trusted_key expects a hex public key string")
 						}
 						m.TrustedKeys = append(m.TrustedKeys, h.Val())
+					}
+				}
+
+			// --- CLUSTER / MESH BLOCK (Fase 14) ---
+			case "cluster":
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					switch h.Val() {
+					case "port":
+						if !h.NextArg() {
+							return nil, h.Err("cluster port expects an integer")
+						}
+						val, err := strconv.Atoi(h.Val())
+						if err != nil {
+							return nil, h.Err("invalid cluster port number")
+						}
+						m.ClusterPort = val
+					case "seeds":
+						// Captura todos os argumentos restantes como seeds
+						m.ClusterSeeds = append(m.ClusterSeeds, h.RemainingArgs()...)
+					case "secret":
+						if !h.NextArg() {
+							return nil, h.Err("cluster secret expects a string (32 bytes)")
+						}
+						m.ClusterSecret = h.Val()
 					}
 				}
 
