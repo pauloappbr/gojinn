@@ -90,7 +90,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ## 🛡️ PART III: OPERATIONAL MATURITY
 *Tools required to run Gojinn safely on the open internet.*
 
-### 🚦 Phase 11: The Gatekeeper (Traffic Control)
+### 🚦 Phase 11: The Gatekeeper (Traffic Control) (DONE v0.11.0)
 *Protecting the Sovereign Cloud from abuse.*
 - [x] **Tenant Identity:** Simple Authentication (Basic Auth / Bearer Token) via Caddyfile.
 - [x] **Rate Limiting:** Per-function or per-token request limits.

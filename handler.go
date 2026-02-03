@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net" // NOVO: Para separar IP:Porta
 	"net/http"
 	"os"
 	"strings"
@@ -27,6 +28,7 @@ var bufferPool = sync.Pool{
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
 	start := time.Now()
 
+	// 1. CORS MANAGEMENT (Phase 11)
 	origin := req.Header.Get("Origin")
 	if len(r.CorsOrigins) > 0 && origin != "" {
 		allowed := false
@@ -50,9 +52,12 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		}
 	}
 
+	// 2. AUTHENTICATION (Phase 11)
+	// Também define a identidade para o Rate Limit
+	tenantID := ""
+
 	if len(r.APIKeys) > 0 {
 		clientKey := req.Header.Get("X-API-Key")
-
 		if clientKey == "" {
 			authHeader := req.Header.Get("Authorization")
 			if strings.HasPrefix(authHeader, "Bearer ") {
@@ -72,7 +77,32 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			r.logger.Warn("🔒 Access Denied: Invalid or missing API Key", zap.String("ip", req.RemoteAddr))
 			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("unauthorized: invalid api key"))
 		}
+
+		tenantID = clientKey // Usa a chave como ID único
+	} else {
+		// Se não tem Auth configurada, usa o IP como ID
+		host, _, err := net.SplitHostPort(req.RemoteAddr)
+		if err != nil {
+			host = req.RemoteAddr
+		}
+		tenantID = host
 	}
+
+	// --- 3. RATE LIMITING (Phase 12) ---
+	if r.RateLimit > 0 {
+		// Obtém (ou cria) o limitador para este cliente
+		limiter := r.getLimiter(tenantID)
+
+		if !limiter.Allow() {
+			r.logger.Warn("🚦 Rate Limit Exceeded", zap.String("tenant", tenantID))
+
+			rw.Header().Set("Retry-After", "1") // Sugere tentar novamente em 1s
+			rw.WriteHeader(http.StatusTooManyRequests)
+			rw.Write([]byte(`{"error": "Too Many Requests", "retry_after": 1}`))
+			return nil
+		}
+	}
+	// -----------------------------------
 
 	r.metrics.active.WithLabelValues(r.Path).Inc()
 	defer r.metrics.active.WithLabelValues(r.Path).Dec()

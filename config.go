@@ -29,6 +29,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.APIKeys = []string{}
 	m.CorsOrigins = []string{}
 
+	m.RateLimit = 0
+	m.RateBurst = 0
+
 	for h.Next() {
 		args := h.RemainingArgs()
 		if len(args) > 0 {
@@ -184,6 +187,20 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "cors_origin":
 				if h.NextArg() {
 					m.CorsOrigins = append(m.CorsOrigins, h.Val())
+				}
+
+			case "rate_limit":
+				if h.NextArg() {
+					val, err := strconv.ParseFloat(h.Val(), 64)
+					if err == nil {
+						m.RateLimit = val
+					}
+				}
+				if h.NextArg() {
+					val, err := strconv.Atoi(h.Val())
+					if err == nil {
+						m.RateBurst = val
+					}
 				}
 			}
 		}

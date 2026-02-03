@@ -2,7 +2,6 @@ package gojinn
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -21,6 +20,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 )
 
 func init() {
@@ -75,6 +75,11 @@ type Gojinn struct {
 	APIKeys      []string `json:"api_keys,omitempty"`
 	AllowedHosts []string `json:"allowed_hosts,omitempty"`
 	CorsOrigins  []string `json:"cors_origins,omitempty"`
+
+	RateLimit  float64 `json:"rate_limit,omitempty"`
+	RateBurst  int     `json:"rate_burst,omitempty"`
+	limiters   map[string]*rate.Limiter
+	limitersMu sync.Mutex
 }
 
 func (*Gojinn) CaddyModule() caddy.ModuleInfo {
@@ -86,11 +91,11 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
+	r.limiters = make(map[string]*rate.Limiter)
 
 	if err := r.setupMetrics(ctx); err != nil {
 		return err
 	}
-
 	if err := r.setupDB(); err != nil {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
@@ -113,11 +118,9 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	if r.MQTTBroker != "" {
 		opts := mqtt.NewClientOptions()
 		opts.AddBroker(r.MQTTBroker)
-		clientID := r.MQTTClientID
-		if clientID == "" {
-			clientID = fmt.Sprintf("gojinn-%d", time.Now().UnixNano())
+		if r.MQTTClientID != "" {
+			opts.SetClientID(r.MQTTClientID)
 		}
-		opts.SetClientID(clientID)
 		if r.MQTTUsername != "" {
 			opts.SetUsername(r.MQTTUsername)
 		}
@@ -163,7 +166,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		}
 		r.logger.Info("provisioning worker pool", zap.Int("workers", r.PoolSize))
 
-		startBoot := time.Now()
 		var wg sync.WaitGroup
 		for i := 0; i < r.PoolSize; i++ {
 			wg.Add(1)
@@ -178,10 +180,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 			}()
 		}
 		wg.Wait()
-		if len(r.enginePool) == 0 {
-			return fmt.Errorf("failed to provision any workers")
-		}
-		r.logger.Info("worker pool ready", zap.Duration("boot_time", time.Since(startBoot)))
 	}
 
 	return nil
@@ -199,13 +197,29 @@ func (r *Gojinn) Cleanup() error {
 	}
 	if r.enginePool != nil {
 		close(r.enginePool)
-		for pair := range r.enginePool {
-			if pair != nil && pair.Runtime != nil {
-				pair.Runtime.Close(context.Background())
-			}
-		}
 	}
 	return nil
+}
+
+func (r *Gojinn) getLimiter(key string) *rate.Limiter {
+	r.limitersMu.Lock()
+	defer r.limitersMu.Unlock()
+
+	limiter, exists := r.limiters[key]
+	if !exists {
+		burst := r.RateBurst
+		if burst == 0 {
+			burst = int(r.RateLimit)
+		}
+		if burst == 0 {
+			burst = 1
+		}
+
+		limiter = rate.NewLimiter(rate.Limit(r.RateLimit), burst)
+		r.limiters[key] = limiter
+	}
+
+	return limiter
 }
 
 type AIRequest struct {
@@ -213,12 +227,10 @@ type AIRequest struct {
 	Messages []AIMessage `json:"messages"`
 	Stream   bool        `json:"stream"`
 }
-
 type AIMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
-
 type AIResponse struct {
 	Choices []struct {
 		Message AIMessage `json:"message"`
@@ -230,14 +242,9 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 	if provider == "" {
 		provider = "openai"
 	}
-
 	model := g.AIModel
 	if model == "" {
-		if provider == "ollama" {
-			model = "llama3"
-		} else {
-			model = "gpt-3.5-turbo"
-		}
+		model = "gpt-3.5-turbo"
 	}
 
 	cacheKey := fmt.Sprintf("%s:%s", model, hashString(prompt))
@@ -250,8 +257,6 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 	if endpoint == "" {
 		if provider == "ollama" {
 			endpoint = "http://localhost:11434/v1/chat/completions"
-		} else if provider == "gemini" {
-			endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 		} else {
 			endpoint = "https://api.openai.com/v1/chat/completions"
 		}
@@ -265,7 +270,6 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 
 		allowed := false
 		hostname := u.Hostname()
-
 		if provider == "ollama" && (hostname == "localhost" || hostname == "127.0.0.1") {
 			allowed = true
 		} else {
