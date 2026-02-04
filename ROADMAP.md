@@ -135,10 +135,10 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Deterministic Replay:** Record inputs to replay crashes locally.
 - [x] **Snapshotting:** Save/Restore full VM state.
 
-### 🖥️ Phase 17: Gojinn Studio
-- [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
-- [ ] **Hot Patching:** Update variables via UI.
-- [ ] **Language-Agnostic CLI:** Unified `gojinn` command family.
+### 🖥️ Phase 17: Gojinn Studio (DONE v0.17.0)
+- [x] **Visual Control Plane:** Web GUI for topology, metrics, and management.
+- [x] **Hot Patching:** Update variables via UI.
+- [x] **Language-Agnostic CLI:** Unified `gojinn` command family.
 
 ### 🤖 Phase 18: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.

@@ -31,14 +31,57 @@ var bufferPool = sync.Pool{
 }
 
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
+	if strings.HasPrefix(req.URL.Path, "/_sys/") {
+		if req.URL.Path == "/_sys/status" {
+			status := map[string]interface{}{
+				"node_id":      "local-node",
+				"uptime":       "running",
+				"pool_size":    r.PoolSize,
+				"active_peers": []string{},
+				"memory_limit": r.MemoryLimit,
+				"fuel_limit":   r.FuelLimit,
+			}
+			if r.meshNode != nil {
+				status["node_id"] = r.meshNode.ID
+				status["active_peers"] = r.meshNode.GetPeers()
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(rw).Encode(status)
+			return nil
+		}
+
+		if req.Method == "POST" && req.URL.Path == "/_sys/patch" {
+			var patch struct {
+				PoolSize int `json:"pool_size"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&patch); err != nil {
+				http.Error(rw, err.Error(), 400)
+				return nil
+			}
+
+			if patch.PoolSize > 0 {
+				r.logger.Info("🔥 Hot Patching Triggered",
+					zap.Int("old_pool_size", r.PoolSize),
+					zap.Int("new_pool_size", patch.PoolSize))
+
+				r.PoolSize = patch.PoolSize
+			}
+
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`{"status": "patched", "msg": "Configuration updated hot!"}`))
+			return nil
+		}
+	}
 	start := time.Now()
 
 	if err := r.handleMiddleware(rw, req); err != nil {
 		return err
 	}
 
-	r.metrics.active.WithLabelValues(r.Path).Inc()
-	defer r.metrics.active.WithLabelValues(r.Path).Dec()
+	if r.metrics != nil {
+		r.metrics.active.WithLabelValues(r.Path).Inc()
+		defer r.metrics.active.WithLabelValues(r.Path).Dec()
+	}
 
 	var pair *EnginePair
 	select {
@@ -122,9 +165,7 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				WasmFile:  r.Path,
 			}
 			dumpBytes, _ := json.MarshalIndent(snapshot, "", "  ")
-
 			filename := fmt.Sprintf("crash_%d.json", time.Now().UnixNano())
-
 			r.saveCrashDump(filename, dumpBytes)
 		}
 
@@ -134,10 +175,6 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	if httpCtx.WSConn != nil {
 		return nil
-	}
-
-	handleFunc := mod.ExportedFunction("handle")
-	if handleFunc != nil {
 	}
 
 	return r.writeResponse(rw, stdoutBuf.Bytes(), time.Since(start).Seconds())
@@ -221,7 +258,10 @@ func (r *Gojinn) writeResponse(rw http.ResponseWriter, outBytes []byte, duration
 	}
 	rw.WriteHeader(resp.Status)
 	rw.Write([]byte(resp.Body))
-	statusLabel := fmt.Sprintf("%d", resp.Status)
-	r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
+
+	if r.metrics != nil {
+		statusLabel := fmt.Sprintf("%d", resp.Status)
+		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
+	}
 	return nil
 }

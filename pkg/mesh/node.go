@@ -10,18 +10,16 @@ import (
 	"github.com/hashicorp/memberlist"
 )
 
-// Define o tipo de mensagem que circula no cluster
 type BroadcastMessage struct {
-	Type  string `json:"type"` // "kv_update"
+	Type  string `json:"type"`
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
 type Node struct {
+	ID   string
 	List *memberlist.Memberlist
 	Port int
-	Name string
-	// Removemos a Queue de Broadcast complexa para simplificar
 
 	OnKVUpdate func(key, value string)
 }
@@ -42,7 +40,6 @@ func (d *delegate) NodeMeta(limit int) []byte {
 }
 
 func (d *delegate) NotifyMsg(b []byte) {
-	// 📩 AQUI: Recebe a mensagem direta enviada por SendReliable
 	var msg BroadcastMessage
 	if err := json.Unmarshal(b, &msg); err != nil {
 		return
@@ -61,7 +58,8 @@ func NewNode(bindPort int, advertisePort int, seeds []string, secretKey string, 
 	config := memberlist.DefaultLANConfig()
 	config.BindPort = bindPort
 	config.AdvertisePort = advertisePort
-	hostname, _ := config.Name, ""
+
+	hostname := config.Name
 	config.Name = fmt.Sprintf("%s-%d", hostname, bindPort)
 	config.LogOutput = io.Discard
 
@@ -73,8 +71,8 @@ func NewNode(bindPort int, advertisePort int, seeds []string, secretKey string, 
 	}
 
 	node := &Node{
+		ID:   config.Name,
 		Port: bindPort,
-		Name: config.Name,
 	}
 
 	d := &delegate{
@@ -95,16 +93,15 @@ func NewNode(bindPort int, advertisePort int, seeds []string, secretKey string, 
 	if len(seeds) > 0 {
 		_, err := list.Join(seeds)
 		if err != nil {
-			log.Printf("⚠️ Mesh: Failed to join seeds %v: %v", seeds, err)
+			log.Printf("Mesh: Failed to join seeds %v: %v", seeds, err)
 		} else {
-			log.Printf("✅ Mesh: Joined cluster via %v. Members: %d", seeds, list.NumMembers())
+			log.Printf("Mesh: Joined cluster via %v. Members: %d", seeds, list.NumMembers())
 		}
 	}
 
 	return node, nil
 }
 
-// BroadcastKV envia a atualização DIRETAMENTE para todos os pares conhecidos
 func (n *Node) BroadcastKV(key, value string) {
 	msg := BroadcastMessage{
 		Type:  "kv_update",
@@ -113,18 +110,14 @@ func (n *Node) BroadcastKV(key, value string) {
 	}
 	payload, _ := json.Marshal(msg)
 
-	// Itera sobre todos os membros conhecidos
 	for _, member := range n.List.Members() {
-		// Não manda pra si mesmo
-		if member.Name == n.Name {
+		if member.Name == n.ID {
 			continue
 		}
 
-		// SendReliable (TCP) garante que a mensagem chegue e dispara NotifyMsg no destino
-		// Para máxima performance poderíamos usar SendBestEffort (UDP), mas Reliable é melhor para KV.
 		err := n.List.SendReliable(member, payload)
 		if err != nil {
-			log.Printf("⚠️ Failed to sync KV with %s: %v", member.Name, err)
+			log.Printf("Failed to sync KV with %s: %v", member.Name, err)
 		}
 	}
 }
@@ -138,6 +131,10 @@ func (n *Node) Shutdown() {
 
 func (n *Node) GetPeers() []string {
 	var peers []string
+	if n.List == nil {
+		return peers
+	}
+
 	for _, m := range n.List.Members() {
 		peers = append(peers, fmt.Sprintf("%s (%s:%d)", m.Name, m.Addr, m.Port))
 	}
