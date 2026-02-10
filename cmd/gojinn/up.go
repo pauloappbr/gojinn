@@ -114,5 +114,5 @@ func signBinary(wasmFile, keyFile string) error {
 		return err
 	}
 
-	return os.WriteFile(wasmFile, signedBytes, 0644)
+	return os.WriteFile(wasmFile, signedBytes, 0600)
 }

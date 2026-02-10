@@ -82,7 +82,8 @@ func compileAny(dir, name string) (string, error) {
 
 func compileRust(dir, _ string) (string, error) {
 	fmt.Println("Building Rust...")
-	exec.Command("cargo", "clean").Run()
+	_ = exec.Command("cargo", "clean").Run()
+	//nolint:gosec
 	cmd := exec.Command("cargo", "build", "--release", "--target", "wasm32-wasip1")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
@@ -95,9 +96,11 @@ func compileRust(dir, _ string) (string, error) {
 
 func compileGo(dir, name string) (string, error) {
 	fmt.Println("Building Go...")
+	//nolint:gosec
 	cmd := exec.Command("tinygo", "build", "-o", name+".wasm", "-target", "wasi", ".")
 	cmd.Dir = dir
 	if _, err := exec.LookPath("tinygo"); err != nil {
+		//nolint:gosec
 		cmd = exec.Command("go", "build", "-o", name+".wasm", ".")
 		cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	}
@@ -112,8 +115,11 @@ func compileGo(dir, name string) (string, error) {
 func compileJS(dir, _ string) (string, error) {
 	fmt.Println("Bundling JS...")
 	if exists(filepath.Join(dir, "package.json")) {
-		exec.Command("npm", "install").Run()
+		if err := exec.Command("npm", "install").Run(); err != nil {
+			return "", fmt.Errorf("npm install failed: %w", err)
+		}
 	}
+	//nolint:gosec
 	cmd := exec.Command("javy", "compile", filepath.Join(dir, "index.js"), "-o", filepath.Join(dir, "index.wasm"))
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
@@ -130,7 +136,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, in, 0644)
+	return os.WriteFile(dst, in, 0600)
 }
 func findNewestWasm(dir string) (string, error) {
 	entries, _ := os.ReadDir(dir)

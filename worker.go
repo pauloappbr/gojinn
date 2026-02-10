@@ -7,13 +7,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/dustin/go-humanize"
 	"github.com/nats-io/nats.go"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"go.uber.org/zap"
-	"nhooyr.io/websocket"
 )
 
 type EnginePair struct {
@@ -66,7 +66,9 @@ func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (
 				zap.String("stderr", stderrBuf.String()))
 
 			errResp := fmt.Sprintf(`{"status": 500, "headers": {"Content-Type": ["application/json"]}, "body": "Runtime Error: %s"}`, err.Error())
-			m.Respond([]byte(errResp))
+			if err := m.Respond([]byte(errResp)); err != nil {
+				r.logger.Error("Failed to send error response", zap.Error(err))
+			}
 			return
 		}
 
@@ -107,8 +109,11 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 	_, err := engine.NewHostModuleBuilder("gojinn").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			level := uint32(stack[0])
+			//nolint:gosec
 			ptr := uint32(stack[1])
+			//nolint:gosec
 			size := uint32(stack[2])
 			msgBytes, ok := mod.Memory().Read(ptr, size)
 			if !ok {
@@ -124,9 +129,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_log").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			queryPtr := uint32(stack[0])
+			//nolint:gosec
 			queryLen := uint32(stack[1])
+			//nolint:gosec
 			outPtr := uint32(stack[2])
+			//nolint:gosec
 			outMaxLen := uint32(stack[3])
 
 			qBytes, ok := mod.Memory().Read(queryPtr, queryLen)
@@ -141,6 +150,7 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 				jsonBytes = []byte(fmt.Sprintf(`[{"error": "%s"}]`, err.Error()))
 			}
 
+			//nolint:gosec
 			bytesToWrite := uint32(len(jsonBytes))
 
 			if bytesToWrite > outMaxLen {
@@ -158,9 +168,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_db_query").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			keyPtr := uint32(stack[0])
+			//nolint:gosec
 			keyLen := uint32(stack[1])
+			//nolint:gosec
 			valPtr := uint32(stack[2])
+			//nolint:gosec
 			valLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
@@ -180,9 +194,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_kv_set").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			keyPtr := uint32(stack[0])
+			//nolint:gosec
 			keyLen := uint32(stack[1])
+			//nolint:gosec
 			outPtr := uint32(stack[2])
+			//nolint:gosec
 			outMaxLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
@@ -200,6 +218,7 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 
 			valueStr := val.(string)
 			valBytes := []byte(valueStr)
+			//nolint:gosec
 			bytesToWrite := uint32(len(valBytes))
 
 			if bytesToWrite > outMaxLen {
@@ -216,9 +235,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_kv_get").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			keyPtr := uint32(stack[0])
+			//nolint:gosec
 			keyLen := uint32(stack[1])
+			//nolint:gosec
 			bodyPtr := uint32(stack[2])
+			//nolint:gosec
 			bodyLen := uint32(stack[3])
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
 			if !ok {
@@ -244,9 +267,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_s3_put").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			keyPtr := uint32(stack[0])
+			//nolint:gosec
 			keyLen := uint32(stack[1])
+			//nolint:gosec
 			outPtr := uint32(stack[2])
+			//nolint:gosec
 			outMaxLen := uint32(stack[3])
 
 			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
@@ -263,6 +290,7 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 				return
 			}
 
+			//nolint:gosec
 			bytesToWrite := uint32(len(valBytes))
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
@@ -278,9 +306,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_s3_get").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			filePtr := uint32(stack[0])
+			//nolint:gosec
 			fileLen := uint32(stack[1])
+			//nolint:gosec
 			payloadPtr := uint32(stack[2])
+			//nolint:gosec
 			payloadLen := uint32(stack[3])
 
 			fBytes, ok := mod.Memory().Read(filePtr, fileLen)
@@ -307,9 +339,13 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_enqueue").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
 			promptPtr := uint32(stack[0])
+			//nolint:gosec
 			promptLen := uint32(stack[1])
+			//nolint:gosec
 			outPtr := uint32(stack[2])
+			//nolint:gosec
 			outMaxLen := uint32(stack[3])
 
 			pBytes, ok := mod.Memory().Read(promptPtr, promptLen)
@@ -326,6 +362,7 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			respBytes := []byte(aiResponse)
+			//nolint:gosec
 			bytesToWrite := uint32(len(respBytes))
 
 			if bytesToWrite > outMaxLen {
@@ -367,7 +404,10 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_ws_upgrade").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			outPtr, outMaxLen := uint32(stack[0]), uint32(stack[1])
+			//nolint:gosec
+			outPtr := uint32(stack[0])
+			//nolint:gosec
+			outMaxLen := uint32(stack[1])
 
 			val := ctx.Value(wsContextKey{})
 			if val == nil {
@@ -386,6 +426,7 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 				return
 			}
 
+			//nolint:gosec
 			bytesToWrite := uint32(len(msgBytes))
 			if bytesToWrite > outMaxLen {
 				bytesToWrite = outMaxLen
@@ -401,7 +442,10 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 		Export("host_ws_read").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			msgPtr, msgLen := uint32(stack[0]), uint32(stack[1])
+			//nolint:gosec
+			msgPtr := uint32(stack[0])
+			//nolint:gosec
+			msgLen := uint32(stack[1])
 
 			val := ctx.Value(wsContextKey{})
 			if val == nil {

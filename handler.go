@@ -45,7 +45,9 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			}
 
 			rw.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(rw).Encode(status)
+			if err := json.NewEncoder(rw).Encode(status); err != nil {
+				r.logger.Error("Failed to encode status", zap.Error(err))
+			}
 			return nil
 		}
 
@@ -79,7 +81,9 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			}
 
 			rw.Header().Set("Content-Type", "application/json")
-			rw.Write([]byte(`{"status": "patched", "msg": "Configuration updated and workers reloaded hot!"}`))
+			if _, err := rw.Write([]byte(`{"status": "patched", "msg": "Configuration updated and workers reloaded hot!"}`)); err != nil {
+				r.logger.Error("Failed to write response", zap.Error(err))
+			}
 			return nil
 		}
 	}
@@ -207,7 +211,9 @@ func (r *Gojinn) writeResponse(rw http.ResponseWriter, outBytes []byte, duration
 		Body    string              `json:"body"`
 	}
 	if err := json.Unmarshal(outBytes, &resp); err != nil {
-		rw.Write(outBytes)
+		if _, err := rw.Write(outBytes); err != nil {
+			r.logger.Error("Failed to write raw response", zap.Error(err))
+		}
 		return nil
 	}
 	for k, v := range resp.Headers {
@@ -219,7 +225,9 @@ func (r *Gojinn) writeResponse(rw http.ResponseWriter, outBytes []byte, duration
 		resp.Status = 200
 	}
 	rw.WriteHeader(resp.Status)
-	rw.Write([]byte(resp.Body))
+	if _, err := rw.Write([]byte(resp.Body)); err != nil {
+		r.logger.Error("Failed to write body response", zap.Error(err))
+	}
 
 	if r.metrics != nil {
 		statusLabel := fmt.Sprintf("%d", resp.Status)

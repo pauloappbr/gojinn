@@ -19,13 +19,13 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/coder/websocket"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
-	"nhooyr.io/websocket"
 
 	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
@@ -316,7 +316,9 @@ func (r *Gojinn) ReloadWorkers() error {
 
 func (r *Gojinn) Cleanup() error {
 	if r.natsConn != nil {
-		r.natsConn.Drain()
+		if err := r.natsConn.Drain(); err != nil {
+			r.logger.Warn("NATS Drain error", zap.Error(err))
+		}
 		r.natsConn.Close()
 	}
 
@@ -484,7 +486,7 @@ func (g *Gojinn) saveCrashDump(filename string, data []byte) {
 	}
 
 	fullPath := filepath.Join(g.CrashPath, filename)
-	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+	if err := os.WriteFile(fullPath, data, 0600); err != nil {
 		g.logger.Error("Failed to write crash dump", zap.Error(err))
 	} else {
 		g.logger.Info("Crash Dump Saved (Time Travel Ready)", zap.String("file", fullPath))

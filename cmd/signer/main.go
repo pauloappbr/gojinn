@@ -53,7 +53,7 @@ func main() {
 			panic(err)
 		}
 
-		err = os.WriteFile(*wasmFile, signedBytes, 0644)
+		err = os.WriteFile(*wasmFile, signedBytes, 0600)
 		if err != nil {
 			panic(err)
 		}

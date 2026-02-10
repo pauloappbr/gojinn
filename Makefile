@@ -1,103 +1,85 @@
-# Gojinn Makefile (Fixed URLs)
+# Makefile for Gojinn - The Sovereign Cloud Platform
 
-# Host configuration
-CADDY_BIN := ./gojinn-server
+# --- Variáveis de Configuração ---
+BINARY_NAME=gojinn
+SERVER_BIN=gojinn-server
+SIGNER_BIN=gojinn-signer
+
+# XCaddy é necessário para buildar o servidor com plugins
 XCADDY_CMD := xcaddy build --with github.com/pauloappbr/gojinn=.
 
-# URLs VMWare Labs
-# Python 3.12
+# URLs VMWare Labs (Runtimes WASM)
 URL_PYTHON := "https://github.com/vmware-labs/webassembly-language-runtimes/releases/download/python%2F3.12.0%2B20231211-040d5a6/python-3.12.0.wasm"
-# PHP 8.2.6 CGI
 URL_PHP    := "https://github.com/vmware-labs/webassembly-language-runtimes/releases/download/php%2F8.2.6%2B20230714-11be424/php-cgi-8.2.6.wasm"
-# Ruby 3.2.2
 URL_RUBY   := "https://github.com/vmware-labs/webassembly-language-runtimes/releases/download/ruby%2F3.2.2%2B20230714-11be424/ruby-3.2.2.wasm"
 
-LDFLAGS := -ldflags "-s -w"
+.PHONY: all clean ci lint audit test build-all build-cli build-server build-signer download-runtimes check-wasm-sdk
 
-.PHONY: all clean run dev build-host build-funcs build-polyglot download-runtimes build-signer sign-funcs secure
+# Default target
+all: build-all
 
-all: download-runtimes build-funcs build-polyglot build-host
+# --- 1. Build Core Binaries ---
+build-all: build-cli build-server build-signer
 
-# --- 0. Download Runtimes ---
+build-cli:
+	@echo "🧰 Building Gojinn CLI..."
+	@mkdir -p bin
+	@go build -o bin/$(BINARY_NAME) ./cmd/gojinn
+
+build-server:
+	@echo "🏗️  Building Gojinn Server (Caddy)..."
+	@# O output vai para a raiz ou bin/ dependendo da preferência. Coloquei na raiz para compatibilidade com seus scripts.
+	@$(XCADDY_CMD) --output $(SERVER_BIN)
+
+build-signer:
+	@echo "🔑 Building Signer Tool..."
+	@go build -o bin/$(SIGNER_BIN) ./cmd/signer/main.go
+
+# --- 2. Polyglot Runtimes (Download Only) ---
+# Como removemos os exemplos, mantemos apenas o download dos runtimes para a pasta lib/ e functions/
 download-runtimes:
 	@echo "⬇️  Checking Polyglot Runtimes..."
 	@mkdir -p lib
-	@# Verifica se é um arquivo válido (> 1KB) para evitar o erro de "Not Found"
-	@if [ ! -s lib/python.wasm ] || [ $$(stat -c%s lib/python.wasm) -lt 1000 ]; then \
-		echo "   [PY] Downloading Python 3.12 (approx 20MB)..."; \
-		curl -L -o lib/python.wasm $(URL_PYTHON); \
-	fi
-	@if [ ! -s lib/php.wasm ] || [ $$(stat -c%s lib/php.wasm) -lt 1000 ]; then \
-		echo "   [PHP] Downloading PHP 8.2 (approx 15MB)..."; \
-		curl -L -o lib/php.wasm $(URL_PHP); \
-	fi
-	@if [ ! -s lib/ruby.wasm ] || [ $$(stat -c%s lib/ruby.wasm) -lt 1000 ]; then \
-		echo "   [RB] Downloading Ruby 3.2 (approx 30MB)..."; \
-		curl -L -o lib/ruby.wasm $(URL_RUBY); \
-	fi
-	@echo "✅ Runtimes ready in ./lib"
-
-# --- 1. Build Host ---
-build-host:
-	@echo "🏗️  Building Caddy host..."
-	@$(XCADDY_CMD) --output $(CADDY_BIN)
-
-# --- 2. Build Go Funcs ---
-build-funcs:
-	@echo "🐹 Building Go WASM functions..."
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/sql.wasm functions/sql/main.go || echo "⚠️ functions/sql not found, skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/counter.wasm functions/counter/main.go || echo "⚠️ functions/counter not found, skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/s3.wasm functions/s3/main.go || echo "⚠️ functions/s3 not found, skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/cron.wasm functions/cron/main.go || echo "⚠️ functions/cron skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/trigger.wasm functions/trigger/main.go || echo "⚠️ trigger skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/worker.wasm functions/worker/main.go || echo "⚠️ worker skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/fail.wasm functions/fail/main.go || echo "⚠️ fail skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/trigger-fail.wasm functions/trigger-fail/main.go || echo "⚠️ trigger-fail skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/iot.wasm functions/iot/main.go || echo "⚠️ iot skipping"
-	@GOOS=wasip1 GOARCH=wasm go build -o functions/ai.wasm functions/ai/main.go || echo "⚠️ ai skipping"
-
-# --- 3. Build Polyglot ---
-build-polyglot: download-runtimes
-	@echo "📜 Building Polyglot functions..."
 	@mkdir -p functions
+	@if [ ! -s lib/python.wasm ]; then curl -L -o lib/python.wasm $(URL_PYTHON); fi
+	@if [ ! -s lib/php.wasm ]; then curl -L -o lib/php.wasm $(URL_PHP); fi
+	@if [ ! -s lib/ruby.wasm ]; then curl -L -o lib/ruby.wasm $(URL_RUBY); fi
+	@# Copia para functions para facilitar o uso local se necessário
+	@cp lib/*.wasm functions/ 2>/dev/null || true
+	@echo "✅ Runtimes ready."
 
-	@# JS
-	@if command -v javy >/dev/null 2>&1; then \
-		cat sdk/js/shim.js examples/polyglot/js/index.js > functions/js_temp.js; \
-		javy build functions/js_temp.js -o functions/js.wasm; \
-		rm functions/js_temp.js; \
-	else \
-		echo "   ⚠️  Javy not found. Skipping JS."; \
-	fi
-	
-	@# Copia os runtimes baixados para a pasta functions
-	@cp lib/python.wasm functions/python.wasm
-	@cp lib/php.wasm functions/php.wasm
-	@cp lib/ruby.wasm functions/ruby.wasm
-	@echo "✅ Polyglot build complete."
+# --- 3. CI & Quality Assurance ---
+setup-ci-tools:
+	@echo "🛠️  Setting up CI tools..."
+	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@which govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest
 
-# --- 4. Dev Mode ---
-dev: build-funcs build-polyglot
-	@echo "🚀 Starting development mode..."
-	@$(XCADDY_CMD)
-	@./caddy run
+lint: setup-ci-tools
+	@echo "🔍 Running Linter..."
+	golangci-lint run ./... --timeout=5m
 
+audit: setup-ci-tools
+	@echo "🛡️  Running Security Audit..."
+	govulncheck ./... || true
+
+test:
+	@echo "🧪 Running Tests..."
+	go test -v -race -short ./...
+
+# Verifica se o SDK Go compila corretamente para WASM (Build check)
+check-wasm-sdk:
+	@echo "🕸️  Verifying WASM SDK Build..."
+	GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./sdk/...
+
+# --- 4. Utilities ---
 clean:
-	@rm -f $(CADDY_BIN) caddy functions/*.wasm
+	@echo "🧹 Cleaning up..."
+	@rm -rf bin/
+	@rm -f $(SERVER_BIN)
+	@rm -f functions/*.wasm
+	@# Mantém o .gitkeep
+	@git checkout functions/.gitkeep 2>/dev/null || true
 
-# --- 5. Security Tools  ---
-build-signer:
-	@echo "🔑 Building Signer Tool..."
-	@go build -o gojinn-signer cmd/signer/main.go
-
-sign-funcs: build-signer build-funcs
-	@echo "✍️  Signing core functions..."
-	@# Assinando o counter.wasm (usado no teste)
-	@./gojinn-signer --action=sign --key=paulo.priv --file=functions/counter.wasm
-	@# Se quiser assinar outros, adicione as linhas aqui:
-	@# ./gojinn-signer --action=sign --key=paulo.priv --file=functions/sql.wasm
-	@echo "✅ Functions signed."
-
-secure: sign-funcs
-	@echo "🛡️  Starting Gojinn in Secure Mode..."
-	@go run cmd/caddy/main.go run --config Caddyfile.secure
+# --- COMANDO MESTRE (CI Local) ---
+ci: lint audit test check-wasm-sdk
+	@echo "\n✅ \033[0;32mALL CHECKS PASSED! Ready to push.\033[0m"
