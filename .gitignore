@@ -12,6 +12,8 @@ caddy
 *.dylib
 *.test
 *.zip
+*.sh
+*.txt
 
 #######################################
 # Security / Keys

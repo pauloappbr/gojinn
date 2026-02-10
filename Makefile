@@ -1,11 +1,9 @@
 # Makefile for Gojinn - The Sovereign Cloud Platform
 
-# --- Variáveis de Configuração ---
 BINARY_NAME=gojinn
 SERVER_BIN=gojinn-server
 SIGNER_BIN=gojinn-signer
 
-# XCaddy é necessário para buildar o servidor com plugins
 XCADDY_CMD := xcaddy build --with github.com/pauloappbr/gojinn=.
 
 # URLs VMWare Labs (Runtimes WASM)
@@ -28,7 +26,6 @@ build-cli:
 
 build-server:
 	@echo "🏗️  Building Gojinn Server (Caddy)..."
-	@# O output vai para a raiz ou bin/ dependendo da preferência. Coloquei na raiz para compatibilidade com seus scripts.
 	@$(XCADDY_CMD) --output $(SERVER_BIN)
 
 build-signer:
@@ -36,7 +33,6 @@ build-signer:
 	@go build -o bin/$(SIGNER_BIN) ./cmd/signer/main.go
 
 # --- 2. Polyglot Runtimes (Download Only) ---
-# Como removemos os exemplos, mantemos apenas o download dos runtimes para a pasta lib/ e functions/
 download-runtimes:
 	@echo "⬇️  Checking Polyglot Runtimes..."
 	@mkdir -p lib
@@ -44,7 +40,6 @@ download-runtimes:
 	@if [ ! -s lib/python.wasm ]; then curl -L -o lib/python.wasm $(URL_PYTHON); fi
 	@if [ ! -s lib/php.wasm ]; then curl -L -o lib/php.wasm $(URL_PHP); fi
 	@if [ ! -s lib/ruby.wasm ]; then curl -L -o lib/ruby.wasm $(URL_RUBY); fi
-	@# Copia para functions para facilitar o uso local se necessário
 	@cp lib/*.wasm functions/ 2>/dev/null || true
 	@echo "✅ Runtimes ready."
 
@@ -66,7 +61,6 @@ test:
 	@echo "🧪 Running Tests..."
 	go test -v -race -short ./...
 
-# Verifica se o SDK Go compila corretamente para WASM (Build check)
 check-wasm-sdk:
 	@echo "🕸️  Verifying WASM SDK Build..."
 	GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./sdk/...
@@ -77,9 +71,7 @@ clean:
 	@rm -rf bin/
 	@rm -f $(SERVER_BIN)
 	@rm -f functions/*.wasm
-	@# Mantém o .gitkeep
 	@git checkout functions/.gitkeep 2>/dev/null || true
 
-# --- COMANDO MESTRE (CI Local) ---
 ci: lint audit test check-wasm-sdk
 	@echo "\n✅ \033[0;32mALL CHECKS PASSED! Ready to push.\033[0m"

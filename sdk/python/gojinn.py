@@ -15,7 +15,6 @@ class Request:
         self.uri = raw_dict.get("uri", "/")
 
     def json(self):
-        """Helper para parsear o body como JSON automaticamente"""
         try:
             if isinstance(self.body, dict):
                 return self.body

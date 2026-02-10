@@ -1,19 +1,9 @@
 package gojinn
 
 import (
-	"bytes"
-	"crypto/ed25519"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,8 +16,6 @@ import (
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
-
-	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
 
 func init() {
@@ -108,50 +96,6 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
-	rawBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read wasm file: %w", err)
-	}
-
-	g.logger.Debug("LoadWasm Raw", zap.String("file", path), zap.Int("size", len(rawBytes)))
-
-	if len(g.TrustedKeys) == 0 {
-		if g.SecurityPolicy == "strict" {
-			return nil, fmt.Errorf("security policy is strict but no trusted keys are defined")
-		}
-
-		cleanBytes := sovereign.StripSignature(rawBytes)
-		return cleanBytes, nil
-	}
-
-	var trusted []ed25519.PublicKey
-	for _, k := range g.TrustedKeys {
-		pk, err := sovereign.ParsePublicKey(k)
-		if err != nil {
-			return nil, fmt.Errorf("invalid trusted key config: %w", err)
-		}
-		trusted = append(trusted, pk)
-	}
-
-	cleanBytes, err := sovereign.VerifyWasm(rawBytes, trusted)
-	if err != nil {
-		if g.SecurityPolicy == "strict" {
-			g.logger.Error("BLOCKING UNSIGNED MODULE", zap.String("file", path), zap.Error(err))
-			return nil, fmt.Errorf("module signature verification failed: %w", err)
-		}
-
-		g.logger.Warn("Security Audit Failed (Allowing run due to audit policy)",
-			zap.String("file", path),
-			zap.Error(err))
-
-		return sovereign.StripSignature(rawBytes), nil
-	}
-
-	g.logger.Info("Module Signature Verified", zap.String("file", path), zap.Int("size_clean", len(cleanBytes)))
-	return cleanBytes, nil
-}
-
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 	r.limiters = make(map[string]*rate.Limiter)
@@ -163,33 +107,9 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
-	opts := &server.Options{
-		Port:   r.NatsPort,
-		NoLog:  true,
-		NoSigs: true,
+	if err := r.startEmbeddedNATS(); err != nil {
+		return err
 	}
-
-	if len(r.NatsRoutes) > 0 {
-		opts.Routes = server.RoutesFromStr(strings.Join(r.NatsRoutes, ","))
-	}
-
-	ns, err := server.NewServer(opts)
-	if err != nil {
-		return fmt.Errorf("failed to create NATS server: %w", err)
-	}
-	r.natsServer = ns
-	go ns.Start()
-
-	if !ns.ReadyForConnections(10 * time.Second) {
-		return fmt.Errorf("nats server failed to start")
-	}
-	r.logger.Info("Embedded NATS Started", zap.String("url", ns.ClientURL()))
-
-	nc, err := nats.Connect(ns.ClientURL())
-	if err != nil {
-		return fmt.Errorf("failed to connect to local NATS: %w", err)
-	}
-	r.natsConn = nc
 
 	if len(r.CronJobs) > 0 {
 		r.scheduler = cron.New(cron.WithSeconds())
@@ -259,7 +179,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 
 	if r.Path != "" {
-
 		wasmBytes, err := r.loadWasmSecurely(r.Path)
 		if err != nil {
 			return fmt.Errorf("failed to load sovereign module: %w", err)
@@ -280,37 +199,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.subsMu.Unlock()
 	}
 
-	return nil
-}
-
-func (r *Gojinn) ReloadWorkers() error {
-	r.logger.Info("Hot Reload Initiated: Recycling Workers...")
-
-	r.subsMu.Lock()
-	defer r.subsMu.Unlock()
-
-	for _, sub := range r.subs {
-		if err := sub.Drain(); err != nil {
-			r.logger.Warn("Failed to drain worker sub", zap.Error(err))
-		}
-	}
-	r.subs = nil
-
-	wasmBytes, err := r.loadWasmSecurely(r.Path)
-	if err != nil {
-		return fmt.Errorf("failed to reload wasm file: %w", err)
-	}
-
-	topic := r.getFunctionTopic()
-	for i := 0; i < r.PoolSize; i++ {
-		sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
-		if err != nil {
-			return fmt.Errorf("failed to start new worker %d: %w", i, err)
-		}
-		r.subs = append(r.subs, sub)
-	}
-
-	r.logger.Info("Hot Reload Complete", zap.Int("new_workers", len(r.subs)))
 	return nil
 }
 
@@ -338,10 +226,6 @@ func (r *Gojinn) Cleanup() error {
 	return nil
 }
 
-func (r *Gojinn) getFunctionTopic() string {
-	return fmt.Sprintf("gojinn.exec.%s", hashString(r.Path))
-}
-
 func (r *Gojinn) getLimiter(key string) *rate.Limiter {
 	r.limitersMu.Lock()
 	defer r.limitersMu.Unlock()
@@ -360,135 +244,10 @@ func (r *Gojinn) getLimiter(key string) *rate.Limiter {
 	return limiter
 }
 
-type AIRequest struct {
-	Model    string      `json:"model"`
-	Messages []AIMessage `json:"messages"`
-	Stream   bool        `json:"stream"`
-}
-type AIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-type AIResponse struct {
-	Choices []struct {
-		Message AIMessage `json:"message"`
-	} `json:"choices"`
-}
-
-func (g *Gojinn) askAI(prompt string) (string, error) {
-	provider := g.AIProvider
-	if provider == "" {
-		provider = "openai"
-	}
-	model := g.AIModel
-	if model == "" {
-		model = "gpt-3.5-turbo"
-	}
-
-	cacheKey := fmt.Sprintf("%s:%s", model, hashString(prompt))
-	if cachedVal, ok := g.aiCache.Load(cacheKey); ok {
-		return cachedVal.(string), nil
-	}
-
-	endpoint := g.AIEndpoint
-	if endpoint == "" {
-		if provider == "ollama" {
-			endpoint = "http://localhost:11434/v1/chat/completions"
-		} else {
-			endpoint = "https://api.openai.com/v1/chat/completions"
-		}
-	}
-	if len(g.AllowedHosts) > 0 {
-		u, err := url.Parse(endpoint)
-		if err == nil {
-			allowed := false
-			hostname := u.Hostname()
-			if provider == "ollama" && (hostname == "localhost" || hostname == "127.0.0.1") {
-				allowed = true
-			} else {
-				for _, host := range g.AllowedHosts {
-					if strings.Contains(hostname, host) {
-						allowed = true
-						break
-					}
-				}
-			}
-			if !allowed {
-				return "", fmt.Errorf("egress denied to %s", hostname)
-			}
-		}
-	}
-
-	reqBody := AIRequest{
-		Model:  model,
-		Stream: false,
-		Messages: []AIMessage{
-			{Role: "system", Content: "You are a helpful assistant running inside Gojinn Serverless."},
-			{Role: "user", Content: prompt},
-		},
-	}
-	jsonData, _ := json.Marshal(reqBody)
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if g.AIToken != "" {
-		req.Header.Set("Authorization", "Bearer "+g.AIToken)
-	}
-
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("AI connect error: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("AI API error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	var aiResp AIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
-		return "", fmt.Errorf("json decode error: %w", err)
-	}
-
-	if len(aiResp.Choices) > 0 {
-		responseContent := aiResp.Choices[0].Message.Content
-		g.aiCache.Store(cacheKey, responseContent)
-		return responseContent, nil
-	}
-	return "", fmt.Errorf("AI returned no response")
-}
-
-func hashString(s string) string {
-	h := sha256.New()
-	h.Write([]byte(s))
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 type wsContextKey struct{}
 
 type HttpContext struct {
 	W      http.ResponseWriter
 	R      *http.Request
 	WSConn *websocket.Conn
-}
-
-func (g *Gojinn) saveCrashDump(filename string, data []byte) {
-	if g.CrashPath == "" {
-		g.CrashPath = "./crashes"
-	}
-	if err := os.MkdirAll(g.CrashPath, 0755); err != nil {
-		g.logger.Error("Failed to create crash directory", zap.Error(err))
-		return
-	}
-
-	fullPath := filepath.Join(g.CrashPath, filename)
-	if err := os.WriteFile(fullPath, data, 0600); err != nil {
-		g.logger.Error("Failed to write crash dump", zap.Error(err))
-	} else {
-		g.logger.Info("Crash Dump Saved (Time Travel Ready)", zap.String("file", fullPath))
-	}
 }
