@@ -128,8 +128,8 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ---
 
-## 🔮 PART V: THE NEXT GENERATION (Visionary)
-*Redefining Developer Experience.*
+## 🛠️ PART V: DEVELOPER EXPERIENCE
+*From a single binary to a resilient, self-healing mesh.*
 
 ### ⏪ Phase 16: Time-Travel Debugging (DONE v0.16.0)
 - [x] **Deterministic Replay:** Record inputs to replay crashes locally.
@@ -140,22 +140,52 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Hot Patching:** Update variables via UI.
 - [x] **Language-Agnostic CLI:** Unified `gojinn` command family.
 
-### ⚡ Phase 18: The Nervous System (NATS Refactoring) (DONE v0.18.0)
+## ⚡ PART VI: THE DISTRIBUTED NERVOUS SYSTEM (NATS Saga)
+
+### 🟢 Phase 18: The Nervous System (Core NATS) (DONE v0.18.0)
 *Replacing the internal communication engine for massive scalability.*
 - [x] **Embedded NATS Server:** Replaced Go channels with a production-grade embedded NATS server.
 - [x] **Worker Queue Groups:** Load balancing via NATS Queue Subscriptions (Round-Robin).
 - [x] **Hot Reload Protocol:** Zero-downtime updates via `_sys` control topics.
-- [x] **Resilient Messaging:** Decoupled HTTP handlers from execution workers.
+- [x] **Topology:** Basic node discovery replacing Memberlist.
 
-### 🤖 Phase 19: The Agentic Interface (MCP)
+### 🟠 Phase 19: The Memory (Persistence & Reliability)
+*Solving "Amnesia" and "Zombie Workers" failures.*
+- [ ] **JetStream Activation:** Enable File Store in the embedded server.
+- [ ] **Durable Messaging:** Replace `nats.Request` with `js.Publish` for guaranteed delivery.
+- [ ] **Automatic Retries:** Implement redelivery policies for failed jobs.
+- [ ] **Dead Letter Queues (DLQ):** Automatic handling of poisoned messages.
+
+### 🔵 Phase 20: The Hive (True Clustering)
+*Solving the "Single Point of Failure".*
+- [ ] **Cluster Config:** Configure Routes and Gossip in NATS Server options.
+- [ ] **Seed URLs:** Allow passing seed nodes via Caddyfile.
+- [ ] **Leaf Nodes:** Implement Leaf Node architecture for Edge-to-Cloud scenarios.
+- [ ] **Multi-Node Testing:** Verify mesh connectivity via Docker Compose.
+
+### 🟣 Phase 21: The Synapse (Distributed State)
+*Solving the "Volatile State" problem.*
+- [ ] **NATS Key-Value (KV):** Replace local `sync.Map` with JetStream KV.
+- [ ] **Global State:** Implement `host_kv_set` / `host_kv_get` backed by distributed KV.
+- [ ] **Consistency:** Ensure keys written on Node A are instantly readable on Node B.
+
+### 🔴 Phase 22: The Overwatch (Distributed Observability)
+*Solving the "Black Box" problem in a mesh.*
+- [ ] **OpenTelemetry + NATS:** Inject TraceIDs into NATS message headers.
+- [ ] **NATS Metrics:** Export queue lag, msg/sec, and consumer status to Prometheus.
+- [ ] **Distributed Tracing:** Correlate Caddy RequestIDs with Worker processing across nodes.
+
+---
+
+## 🔮 PART VII: THE NEXT GENERATION (Future)
+
+### 🤖 Phase 23: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
 - [ ] **Semantic Router:** Natural language routing to functions.
-- [ ] **Self-Healing:** AI-driven log analysis and fix suggestions.
 
-### 💎 Phase 20: The Sync Engine (Via LibSQL)
+### 💎 Phase 24: The Sync Engine (Via LibSQL)
 - [ ] **LibSQL Integration:** Replace standard SQLite driver with LibSQL server mode.
 - [ ] **Replication Tunnel:** Expose replication protocol safely via Caddy/WebSockets.
-- [ ] **Client SDK:** Provide a JS helper to connect browser-based SQLite to Gojinn.
 
 ---
 
