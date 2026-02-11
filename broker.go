@@ -2,6 +2,7 @@ package gojinn
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,10 +12,16 @@ import (
 )
 
 func (g *Gojinn) startEmbeddedNATS() error {
+	storeDir := filepath.Join(g.DataDir, "nats_store")
+
 	opts := &server.Options{
-		Port:   g.NatsPort,
-		NoLog:  true,
-		NoSigs: true,
+		Port:               g.NatsPort,
+		NoLog:              true,
+		NoSigs:             true,
+		JetStream:          true,
+		StoreDir:           storeDir,
+		JetStreamMaxStore:  1 * 1024 * 1024 * 1024,
+		JetStreamMaxMemory: 64 * 1024 * 1024,
 	}
 
 	if len(g.NatsRoutes) > 0 {
@@ -34,7 +41,10 @@ func (g *Gojinn) startEmbeddedNATS() error {
 	}
 
 	clientURL := ns.ClientURL()
-	g.logger.Info("Embedded NATS Started", zap.String("url", clientURL))
+	g.logger.Info("Embedded NATS JetStream Started",
+		zap.String("url", clientURL),
+		zap.String("store_dir", storeDir),
+	)
 
 	nc, err := nats.Connect(clientURL)
 	if err != nil {
@@ -42,6 +52,35 @@ func (g *Gojinn) startEmbeddedNATS() error {
 	}
 	g.natsConn = nc
 
+	js, err := nc.JetStream()
+	if err != nil {
+		return fmt.Errorf("failed to init JetStream context: %w", err)
+	}
+	g.js = js
+
+	return g.ensureStream()
+}
+
+func (g *Gojinn) ensureStream() error {
+	streamName := "GOJINN_WORKER"
+
+	_, err := g.js.StreamInfo(streamName)
+	if err == nil {
+		return nil
+	}
+
+	g.logger.Info("Initializing Durable Stream", zap.String("stream", streamName))
+
+	_, err = g.js.AddStream(&nats.StreamConfig{
+		Name:      streamName,
+		Subjects:  []string{"gojinn.exec.>"},
+		Storage:   nats.FileStorage,
+		Retention: nats.WorkQueuePolicy,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to create JetStream stream: %w", err)
+	}
 	return nil
 }
 

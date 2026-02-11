@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
@@ -88,8 +89,6 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		}
 	}
 
-	start := time.Now()
-
 	if err := r.handleMiddleware(rw, req); err != nil {
 		return err
 	}
@@ -117,33 +116,29 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	topic := r.getFunctionTopic()
 
-	natsTimeout := time.Duration(r.Timeout) + (100 * time.Millisecond)
-
-	if r.natsConn == nil {
-		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("NATS connection not available"))
+	if r.js == nil {
+		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("JetStream not ready"))
 	}
 
-	msg, err := r.natsConn.Request(topic, inputJSON, natsTimeout)
+	pubAck, err := r.js.Publish(topic, inputJSON, nats.MsgId(fmt.Sprintf("%d", time.Now().UnixNano())))
+
 	if err != nil {
-		r.logger.Error("Function Execution Failed (NATS)", zap.Error(err))
-
-		if r.RecordCrashes {
-			snapshot := CrashSnapshot{
-				Timestamp: time.Now(),
-				Error:     err.Error(),
-				Input:     inputJSON,
-				Env:       r.Env,
-				WasmFile:  r.Path,
-			}
-			dumpBytes, _ := json.MarshalIndent(snapshot, "", "  ")
-			filename := fmt.Sprintf("crash_%d.json", time.Now().UnixNano())
-			r.saveCrashDump(filename, dumpBytes)
-		}
-
-		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("worker execution failed: %v", err))
+		r.logger.Error("Failed to Persist Job (JetStream)", zap.Error(err))
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("persistence failed: %v", err))
 	}
 
-	return r.writeResponse(rw, msg.Data, time.Since(start).Seconds())
+	rw.Header().Set("Content-Type", "application/json")
+	rw.Header().Set("X-Gojinn-Job-ID", fmt.Sprintf("%d", pubAck.Sequence))
+	rw.WriteHeader(http.StatusAccepted)
+
+	resp := map[string]interface{}{
+		"status": "queued",
+		"job_id": pubAck.Sequence,
+		"stream": pubAck.Stream,
+		"msg":    "Job persisted to disk and queued for execution.",
+	}
+
+	return json.NewEncoder(rw).Encode(resp)
 }
 
 func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) error {
@@ -197,41 +192,6 @@ func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) err
 			rw.WriteHeader(http.StatusTooManyRequests)
 			return fmt.Errorf("rate limit exceeded")
 		}
-	}
-	return nil
-}
-
-func (r *Gojinn) writeResponse(rw http.ResponseWriter, outBytes []byte, duration float64) error {
-	if len(outBytes) == 0 {
-		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("empty response from wasm"))
-	}
-	var resp struct {
-		Status  int                 `json:"status"`
-		Headers map[string][]string `json:"headers"`
-		Body    string              `json:"body"`
-	}
-	if err := json.Unmarshal(outBytes, &resp); err != nil {
-		if _, err := rw.Write(outBytes); err != nil {
-			r.logger.Error("Failed to write raw response", zap.Error(err))
-		}
-		return nil
-	}
-	for k, v := range resp.Headers {
-		for _, val := range v {
-			rw.Header().Add(k, val)
-		}
-	}
-	if resp.Status == 0 {
-		resp.Status = 200
-	}
-	rw.WriteHeader(resp.Status)
-	if _, err := rw.Write([]byte(resp.Body)); err != nil {
-		r.logger.Error("Failed to write body response", zap.Error(err))
-	}
-
-	if r.metrics != nil {
-		statusLabel := fmt.Sprintf("%d", resp.Status)
-		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 	}
 	return nil
 }

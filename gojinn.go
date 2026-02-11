@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -35,6 +36,8 @@ type Gojinn struct {
 	RecordCrashes bool   `json:"record_crashes,omitempty"`
 	CrashPath     string `json:"crash_path,omitempty"`
 
+	DataDir string `json:"data_dir,omitempty"`
+
 	TrustedKeys    []string `json:"trusted_keys,omitempty"`
 	SecurityPolicy string   `json:"security_policy,omitempty"`
 
@@ -42,6 +45,7 @@ type Gojinn struct {
 	NatsRoutes []string `json:"nats_routes,omitempty"`
 	natsServer *server.Server
 	natsConn   *nats.Conn
+	js         nats.JetStreamContext
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`
@@ -99,6 +103,13 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 	r.limiters = make(map[string]*rate.Limiter)
+
+	if r.DataDir == "" {
+		r.DataDir = "./data"
+	}
+	if err := os.MkdirAll(r.DataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
 
 	if err := r.setupMetrics(ctx); err != nil {
 		return err

@@ -3,23 +3,18 @@ package gojinn
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/coder/websocket"
-	"github.com/dustin/go-humanize"
 	"github.com/nats-io/nats.go"
 	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"go.uber.org/zap"
 )
 
-type EnginePair struct {
-	Runtime wazero.Runtime
-	Code    wazero.CompiledModule
-}
+const (
+	MaxRetries = 5
+)
 
 func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (*nats.Subscription, error) {
 	pair, err := r.createWazeroRuntime(wasmBytes)
@@ -27,8 +22,23 @@ func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (
 		return nil, fmt.Errorf("failed to create wazero runtime for worker %d: %w", id, err)
 	}
 
-	sub, err := r.natsConn.QueueSubscribe(topic, "workers", func(m *nats.Msg) {
-		r.logger.Debug("Worker received request", zap.Int("worker_id", id), zap.Int("payload_size", len(m.Data)))
+	queueGroup := fmt.Sprintf("WORKERS_%s", hashString(r.Path))
+
+	sub, err := r.js.QueueSubscribe(topic, queueGroup, func(m *nats.Msg) {
+		meta, err := m.Metadata()
+		if err != nil {
+			r.logger.Error("Failed to get msg metadata", zap.Error(err))
+			_ = m.Nak()
+			return
+		}
+
+		deliverCount := meta.NumDelivered
+		r.logger.Debug("Worker picked up job",
+			zap.Int("worker_id", id),
+			zap.Uint64("seq", meta.Sequence.Stream),
+			zap.Uint64("attempt", deliverCount))
+
+		_ = m.InProgress()
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.Timeout))
 		defer cancel()
@@ -60,484 +70,61 @@ func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (
 
 		mod, err := pair.Runtime.InstantiateModule(ctx, pair.Code, modConfig)
 		if err != nil {
-			r.logger.Error("WASM Execution Failed",
+			errMsg := fmt.Sprintf("Wasm Error: %v | Stderr: %s", err, stderrBuf.String())
+			r.logger.Warn("Job Failed",
 				zap.Int("worker_id", id),
-				zap.Error(err),
-				zap.String("stderr", stderrBuf.String()))
+				zap.Uint64("attempt", deliverCount),
+				zap.String("error", errMsg))
 
-			errResp := fmt.Sprintf(`{"status": 500, "headers": {"Content-Type": ["application/json"]}, "body": "Runtime Error: %s"}`, err.Error())
-			if err := m.Respond([]byte(errResp)); err != nil {
-				r.logger.Error("Failed to send error response", zap.Error(err))
+			if deliverCount >= MaxRetries {
+				r.logger.Error("Max Retries Reached. Moving to DLQ/CrashDump.", zap.Uint64("seq", meta.Sequence.Stream))
+
+				snapshot := CrashSnapshot{
+					Timestamp: time.Now(),
+					Error:     errMsg,
+					Input:     json.RawMessage(m.Data),
+					Env:       r.Env,
+					WasmFile:  r.Path,
+				}
+				dumpBytes, _ := json.MarshalIndent(snapshot, "", "  ")
+				filename := fmt.Sprintf("crash_%s_seq%d.json", time.Now().Format("20060102-150405"), meta.Sequence.Stream)
+				r.saveCrashDump(filename, dumpBytes)
+
+				if ackErr := m.Ack(); ackErr != nil {
+					r.logger.Error("Failed to Ack Poisoned Message", zap.Error(ackErr))
+				}
+				return
 			}
+
+			backoff := time.Duration(deliverCount) * time.Second
+			_ = m.NakWithDelay(backoff)
 			return
 		}
 
 		mod.Close(ctx)
 
-		if err := m.Respond(stdoutBuf.Bytes()); err != nil {
-			r.logger.Error("Failed to send NATS response", zap.Error(err))
+		if err := m.Ack(); err != nil {
+			r.logger.Error("Failed to ACK message", zap.Error(err))
+		} else {
+			r.logger.Info("Job Completed Successfully",
+				zap.Int("worker_id", id),
+				zap.Uint64("seq", meta.Sequence.Stream))
 		}
-	})
+
+	},
+		nats.ManualAck(),
+		nats.BindStream("GOJINN_WORKER"),
+		nats.MaxDeliver(MaxRetries+1),
+	)
 
 	if err != nil {
 		return nil, err
 	}
 
-	r.logger.Info("Worker Subscribed and Ready", zap.Int("id", id), zap.String("topic", topic))
+	r.logger.Info("Worker Durable Consumer Ready",
+		zap.Int("id", id),
+		zap.String("topic", topic),
+		zap.String("queue", queueGroup))
 
 	return sub, nil
-}
-
-func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
-	ctxWazero := context.Background()
-	rConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
-
-	if r.MemoryLimit != "" {
-		bytes, err := humanize.ParseBytes(r.MemoryLimit)
-		if err == nil && bytes > 0 {
-			const wasmPageSize = 65536
-			pages := uint32(bytes / wasmPageSize) //nolint:gosec
-			if bytes%wasmPageSize != 0 {
-				pages++
-			}
-			rConfig = rConfig.WithMemoryLimitPages(pages)
-		}
-	}
-
-	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
-
-	_, err := engine.NewHostModuleBuilder("gojinn").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			level := uint32(stack[0])
-			//nolint:gosec
-			ptr := uint32(stack[1])
-			//nolint:gosec
-			size := uint32(stack[2])
-			msgBytes, ok := mod.Memory().Read(ptr, size)
-			if !ok {
-				return
-			}
-			msg := string(msgBytes)
-			if level == 3 {
-				r.logger.Error(msg)
-			} else {
-				r.logger.Info(msg)
-			}
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
-		Export("host_log").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			queryPtr := uint32(stack[0])
-			//nolint:gosec
-			queryLen := uint32(stack[1])
-			//nolint:gosec
-			outPtr := uint32(stack[2])
-			//nolint:gosec
-			outMaxLen := uint32(stack[3])
-
-			qBytes, ok := mod.Memory().Read(queryPtr, queryLen)
-			if !ok {
-				stack[0] = 0
-				return
-			}
-			query := string(qBytes)
-
-			jsonBytes, err := r.executeQueryToJSON(query)
-			if err != nil {
-				jsonBytes = []byte(fmt.Sprintf(`[{"error": "%s"}]`, err.Error()))
-			}
-
-			//nolint:gosec
-			bytesToWrite := uint32(len(jsonBytes))
-
-			if bytesToWrite > outMaxLen {
-				bytesToWrite = outMaxLen
-				jsonBytes = jsonBytes[:bytesToWrite]
-			}
-
-			if !mod.Memory().Write(outPtr, jsonBytes) {
-				stack[0] = 0
-				return
-			}
-
-			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
-		Export("host_db_query").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			keyPtr := uint32(stack[0])
-			//nolint:gosec
-			keyLen := uint32(stack[1])
-			//nolint:gosec
-			valPtr := uint32(stack[2])
-			//nolint:gosec
-			valLen := uint32(stack[3])
-
-			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
-			if !ok {
-				return
-			}
-			key := string(kBytes)
-
-			vBytes, ok := mod.Memory().Read(valPtr, valLen)
-			if !ok {
-				return
-			}
-			val := string(vBytes)
-
-			r.kvStore.Store(key, val)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
-		Export("host_kv_set").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			keyPtr := uint32(stack[0])
-			//nolint:gosec
-			keyLen := uint32(stack[1])
-			//nolint:gosec
-			outPtr := uint32(stack[2])
-			//nolint:gosec
-			outMaxLen := uint32(stack[3])
-
-			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
-			if !ok {
-				stack[0] = 0
-				return
-			}
-			key := string(kBytes)
-
-			val, ok := r.kvStore.Load(key)
-			if !ok {
-				stack[0] = 0xFFFFFFFFFFFFFFFF
-				return
-			}
-
-			valueStr := val.(string)
-			valBytes := []byte(valueStr)
-			//nolint:gosec
-			bytesToWrite := uint32(len(valBytes))
-
-			if bytesToWrite > outMaxLen {
-				bytesToWrite = outMaxLen
-			}
-
-			if !mod.Memory().Write(outPtr, valBytes[:bytesToWrite]) {
-				stack[0] = 0
-				return
-			}
-
-			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
-		Export("host_kv_get").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			keyPtr := uint32(stack[0])
-			//nolint:gosec
-			keyLen := uint32(stack[1])
-			//nolint:gosec
-			bodyPtr := uint32(stack[2])
-			//nolint:gosec
-			bodyLen := uint32(stack[3])
-			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
-			if !ok {
-				stack[0] = 1
-				return
-			}
-			key := string(kBytes)
-
-			bBytes, ok := mod.Memory().Read(bodyPtr, bodyLen)
-			if !ok {
-				stack[0] = 1
-				return
-			}
-
-			err := r.s3Put(ctx, key, bBytes)
-			if err != nil {
-				r.logger.Error("s3 put failed", zap.Error(err))
-				stack[0] = 1
-			} else {
-				stack[0] = 0
-			}
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
-		Export("host_s3_put").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			keyPtr := uint32(stack[0])
-			//nolint:gosec
-			keyLen := uint32(stack[1])
-			//nolint:gosec
-			outPtr := uint32(stack[2])
-			//nolint:gosec
-			outMaxLen := uint32(stack[3])
-
-			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
-			if !ok {
-				stack[0] = 0
-				return
-			}
-			key := string(kBytes)
-
-			valBytes, err := r.s3Get(ctx, key)
-			if err != nil {
-				r.logger.Error("s3 get failed", zap.Error(err))
-				stack[0] = 0
-				return
-			}
-
-			//nolint:gosec
-			bytesToWrite := uint32(len(valBytes))
-			if bytesToWrite > outMaxLen {
-				bytesToWrite = outMaxLen
-			}
-
-			if !mod.Memory().Write(outPtr, valBytes[:bytesToWrite]) {
-				stack[0] = 0
-				return
-			}
-
-			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
-		Export("host_s3_get").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			filePtr := uint32(stack[0])
-			//nolint:gosec
-			fileLen := uint32(stack[1])
-			//nolint:gosec
-			payloadPtr := uint32(stack[2])
-			//nolint:gosec
-			payloadLen := uint32(stack[3])
-
-			fBytes, ok := mod.Memory().Read(filePtr, fileLen)
-			if !ok {
-				stack[0] = 1
-				return
-			}
-			wasmFile := string(fBytes)
-
-			pBytes, ok := mod.Memory().Read(payloadPtr, payloadLen)
-			if !ok {
-				stack[0] = 1
-				return
-			}
-			payload := string(pBytes)
-
-			go func() {
-				r.runAsyncJob(wasmFile, payload)
-			}()
-
-			r.logger.Info("Job enqueued in background", zap.String("file", wasmFile))
-			stack[0] = 0
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
-		Export("host_enqueue").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			promptPtr := uint32(stack[0])
-			//nolint:gosec
-			promptLen := uint32(stack[1])
-			//nolint:gosec
-			outPtr := uint32(stack[2])
-			//nolint:gosec
-			outMaxLen := uint32(stack[3])
-
-			pBytes, ok := mod.Memory().Read(promptPtr, promptLen)
-			if !ok {
-				stack[0] = 0
-				return
-			}
-			prompt := string(pBytes)
-
-			aiResponse, err := r.askAI(prompt)
-			if err != nil {
-				aiResponse = fmt.Sprintf(`{"error": "%s"}`, err.Error())
-				r.logger.Error("AI Host Function Failed", zap.Error(err))
-			}
-
-			respBytes := []byte(aiResponse)
-			//nolint:gosec
-			bytesToWrite := uint32(len(respBytes))
-
-			if bytesToWrite > outMaxLen {
-				bytesToWrite = outMaxLen
-				respBytes = respBytes[:bytesToWrite]
-			}
-
-			if !mod.Memory().Write(outPtr, respBytes) {
-				stack[0] = 0
-				return
-			}
-
-			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
-		Export("host_ask_ai").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			val := ctx.Value(wsContextKey{})
-			if val == nil {
-				r.logger.Error("WS Upgrade called without HTTP context")
-				stack[0] = 0
-				return
-			}
-
-			httpCtx := val.(*HttpContext)
-
-			c, err := websocket.Accept(httpCtx.W, httpCtx.R, &websocket.AcceptOptions{
-				InsecureSkipVerify: true,
-			})
-			if err != nil {
-				r.logger.Error("Failed to accept websocket", zap.Error(err))
-				stack[0] = 0
-				return
-			}
-
-			httpCtx.WSConn = c
-			stack[0] = 1
-		}), []api.ValueType{}, []api.ValueType{api.ValueTypeI32}).
-		Export("host_ws_upgrade").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			outPtr := uint32(stack[0])
-			//nolint:gosec
-			outMaxLen := uint32(stack[1])
-
-			val := ctx.Value(wsContextKey{})
-			if val == nil {
-				stack[0] = 0
-				return
-			}
-			httpCtx := val.(*HttpContext)
-			if httpCtx.WSConn == nil {
-				stack[0] = 0
-				return
-			}
-
-			_, msgBytes, err := httpCtx.WSConn.Read(ctx)
-			if err != nil {
-				stack[0] = 0
-				return
-			}
-
-			//nolint:gosec
-			bytesToWrite := uint32(len(msgBytes))
-			if bytesToWrite > outMaxLen {
-				bytesToWrite = outMaxLen
-			}
-
-			if !mod.Memory().Write(outPtr, msgBytes[:bytesToWrite]) {
-				stack[0] = 0
-				return
-			}
-
-			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
-		Export("host_ws_read").
-		NewFunctionBuilder().
-		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
-			//nolint:gosec
-			msgPtr := uint32(stack[0])
-			//nolint:gosec
-			msgLen := uint32(stack[1])
-
-			val := ctx.Value(wsContextKey{})
-			if val == nil {
-				return
-			}
-			httpCtx := val.(*HttpContext)
-			if httpCtx.WSConn == nil {
-				return
-			}
-
-			msgBytes, ok := mod.Memory().Read(msgPtr, msgLen)
-			if !ok {
-				return
-			}
-
-			err := httpCtx.WSConn.Write(ctx, websocket.MessageText, msgBytes)
-			if err != nil {
-				r.logger.Error("WS Write failed", zap.Error(err))
-			}
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
-		Export("host_ws_write").
-		Instantiate(ctxWazero)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate host module: %w", err)
-	}
-
-	wasi_snapshot_preview1.MustInstantiate(ctxWazero, engine)
-
-	code, err := engine.CompileModule(ctxWazero, wasmBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile wasm binary: %w", err)
-	}
-
-	return &EnginePair{Runtime: engine, Code: code}, nil
-}
-
-func (r *Gojinn) runBackgroundJob(wasmFile string) {
-	cronPayload := `{"event_type": "cron", "source": "gojinn_scheduler"}`
-	r.runAsyncJob(wasmFile, cronPayload)
-}
-
-func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
-	const maxRetries = 3
-	var err error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		err = r.executeOneShot(wasmFile, payload)
-		if err == nil {
-			r.logger.Debug("Async job finished", zap.String("file", wasmFile), zap.Int("attempt", attempt))
-			return
-		}
-
-		r.logger.Warn("Async job failed", zap.String("file", wasmFile), zap.Int("attempt", attempt), zap.Error(err))
-
-		if attempt < maxRetries {
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
-	}
-
-	r.moveToDLQ(wasmFile, payload, err)
-}
-
-func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
-	wasmBytes, err := r.loadWasmSecurely(wasmFile)
-	if err != nil {
-		return fmt.Errorf("security check failed for async job: %w", err)
-	}
-
-	eng, err := r.createWazeroRuntime(wasmBytes)
-	if err != nil {
-		return fmt.Errorf("create worker error: %w", err)
-	}
-	defer eng.Runtime.Close(context.Background())
-
-	modConfig := wazero.NewModuleConfig().
-		WithStdin(bytes.NewBufferString(payload)).
-		WithStdout(os.Stdout).
-		WithStderr(os.Stderr)
-
-	mod, err := eng.Runtime.InstantiateModule(context.Background(), eng.Code, modConfig)
-	if err != nil {
-		return err
-	}
-
-	return mod.Close(context.Background())
-}
-
-func (r *Gojinn) moveToDLQ(wasmFile, payload string, err error) {
-	r.logger.Error("[DLQ] Job moved to Dead Letter Queue",
-		zap.String("file", wasmFile),
-		zap.String("payload", payload),
-		zap.String("final_error", err.Error()),
-	)
 }
