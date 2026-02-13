@@ -74,7 +74,11 @@ type Gojinn struct {
 
 	DBDriver string `json:"db_driver,omitempty"`
 	DBDSN    string `json:"db_dsn,omitempty"`
-	kv       nats.KeyValue
+
+	DBSyncURL   string `json:"db_sync_url,omitempty"`
+	DBSyncToken string `json:"db_sync_token,omitempty"`
+
+	kv nats.KeyValue
 
 	db      *sql.DB
 	logger  *zap.Logger

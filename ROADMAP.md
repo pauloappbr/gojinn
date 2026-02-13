@@ -183,17 +183,59 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ---
 
-## 🔮 PART VII: THE NEXT GENERATION (Future)
+## 🔮 PART VII: THE NEXT GENERATION
 
-### 🤖 Phase 24: The Agentic Interface (MCP)
-- [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
-- [ ] **Semantic Router:** Natural language routing to functions.
+### 🤖 Phase 24: The Agentic Interface (MCP) (DONE v0.24.0)
+- [x] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
+- [x] **Semantic Router:** Natural language routing to functions.
 
-### 💎 Phase 25: The Sync Engine (Via LibSQL)
-- [ ] **LibSQL Integration:** Replace standard SQLite driver with LibSQL server mode.
-- [ ] **Replication Tunnel:** Expose replication protocol safely via Caddy/WebSockets.
+### 💎 Phase 25: The Sync Engine (Via LibSQL) (DONE v0.25.0)
+- [x] **LibSQL Integration:** Replace standard SQLite driver with LibSQL server mode.
+- [x] **Replication Tunnel:** Expose replication protocol safely via Caddy/WebSockets.
 
 ---
+## 🏛️ PART VIII: INSTITUTIONAL GRADE SOVEREIGNTY
+
+### 🟢 Phase 26: Deterministic Cluster & Consensus
+*From distributed system to formally modeled distributed system.*
+- [ ] **Formal Leader Election:** Deterministic election for critical actors.
+- [ ] **Consistency Policies:** Configurable AP vs CP modes per namespace.
+- [ ] **Deterministic Failover:** Predictable actor relocation on node failure.
+- [ ] **Partition Policies:** Configurable behavior during network splits.
+- [ ] **Cluster State Machine:** Explicit distributed state model documentation.
+
+### 🟠 Phase 27: Disaster Recovery & Snapshots
+*Operational sovereignty and recoverability.*
+- [ ] **Global Snapshot Engine:** KV + JetStream + LibSQL unified snapshot.
+- [ ] **Incremental Backups:** WAL-based incremental persistence.
+- [ ] **Cluster-Level Restore:** Full restore into new topology.
+- [ ] **Versioned State Recovery:** Rollback to previous state points.
+- [ ] **Encryption At-Rest:** Official disk-level cryptographic storage.
+
+### 🔵 Phase 28: Multi-Tenant Hard Isolation
+*From logical isolation to operational isolation.*
+- [ ] **Tenant Namespaces:** Dedicated NATS subjects & KV prefixes.
+- [ ] **Per-Tenant Streams:** Isolated JetStream persistence.
+- [ ] **Resource Quotas:** CPU/RAM/IO enforcement per tenant.
+- [ ] **Signed Audit Logs:** Tenant-scoped cryptographically verifiable logs.
+
+### 🟣 Phase 29: Formal Security & Transparency
+*Trust through verification.*
+- [ ] **Independent Security Audit.**
+- [ ] **Threat Model Documentation:** STRIDE-based analysis.
+- [ ] **SBOM Publication:** Software Bill of Materials.
+- [ ] **Reproducible Builds.**
+- [ ] **Binary Hash Transparency Log.**
+- [ ] **Supply Chain Attestation:** SLSA-level compliance optional.
+
+### 🔴 Phase 30: Stability Freeze — v1.0 LTS
+*No new features. Only guarantees.*
+- [ ] **API Freeze.**
+- [ ] **Backward Compatibility Policy.**
+- [ ] **Long Term Support:** 12–24 Month Support Window.
+- [ ] **Production Hardening Only:** No feature creep.
+- [ ] **Official Whitepaper:** Architecture + Threat Model + CAP Model.
+- [ ] **Public Benchmarks & Failure Scenarios.**
 
 ### ❌ Explicit Non-Goals
 To keep the project focused, we will **NOT** build:

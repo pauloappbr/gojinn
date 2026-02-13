@@ -102,6 +102,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if h.NextArg() {
 					m.DBDSN = h.Val()
 				}
+
+			case "db_sync_url":
+				if h.NextArg() {
+					m.DBSyncURL = h.Val()
+				}
+			case "db_sync_token":
+				if h.NextArg() {
+					m.DBSyncToken = h.Val()
+				}
+
 			case "s3_endpoint":
 				if h.NextArg() {
 					m.S3Endpoint = h.Val()
