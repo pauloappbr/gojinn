@@ -204,7 +204,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Partition Policies:** Configurable behavior during network splits.
 - [x] **Cluster State Machine:** Explicit distributed state model documentation.
 
-### 🟠 Phase 27: Disaster Recovery & Snapshots
+### 🟠 Phase 27: Disaster Recovery & Snapshots (DONE v0.27.0)
 *Operational sovereignty and recoverability.*
 - [x] **Global Snapshot Engine:** KV + JetStream + LibSQL unified snapshot.
 - [x] **Incremental Backups:** WAL-based incremental persistence.

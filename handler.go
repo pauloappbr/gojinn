@@ -50,7 +50,7 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				"memory_limit": r.MemoryLimit,
 				"fuel_limit":   r.FuelLimit,
 				"nats_status":  "disconnected",
-				"topic":        r.getFunctionTopic(),
+				"topic":        "gojinn.tenant.*.exec.>",
 			}
 
 			if r.natsConn != nil {
@@ -120,43 +120,44 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			})
 			return nil
 		}
-	}
 
-	if req.Method == "POST" && req.URL.Path == "/_sys/restore" {
-		var payload struct {
-			File string `json:"file"`
-		}
-		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-			http.Error(rw, "Invalid JSON payload", 400)
-			return nil
-		}
-
-		if payload.File == "" {
-			http.Error(rw, "Missing 'file' parameter", 400)
-			return nil
-		}
-
-		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(map[string]string{
-			"status": "success",
-			"msg":    "Restore accepted. System is overwriting disks and will restart.",
-		})
-
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-
-			err := r.RestoreGlobalSnapshot(payload.File)
-			if err != nil {
-				r.logger.Fatal("Restore completely failed! Server is in an unknown state.", zap.Error(err))
+		if req.Method == "POST" && req.URL.Path == "/_sys/restore" {
+			var payload struct {
+				File string `json:"file"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				http.Error(rw, "Invalid JSON payload", 400)
+				return nil
 			}
 
-			os.Exit(0)
-		}()
+			if payload.File == "" {
+				http.Error(rw, "Missing 'file' parameter", 400)
+				return nil
+			}
 
-		return nil
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]string{
+				"status": "success",
+				"msg":    "Restore accepted. System is overwriting disks and will restart.",
+			})
+
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+
+				err := r.RestoreGlobalSnapshot(payload.File)
+				if err != nil {
+					r.logger.Fatal("Restore completely failed! Server is in an unknown state.", zap.Error(err))
+				}
+
+				os.Exit(0)
+			}()
+
+			return nil
+		}
 	}
 
-	if err := r.handleMiddleware(rw, req); err != nil {
+	tenantID, err := r.extractTenantAndHandleMiddleware(rw, req)
+	if err != nil {
 		return err
 	}
 
@@ -181,11 +182,18 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	}
 	inputJSON, _ := json.Marshal(reqPayload)
 
-	topic := r.getFunctionTopic()
-
 	if r.js == nil {
 		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("JetStream not ready"))
 	}
+	_, err = r.EnsureTenantResources(tenantID)
+	if err != nil {
+		r.logger.Error("Failed to provision tenant resources", zap.Error(err))
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("infrastructure failure: %v", err))
+	}
+
+	_ = r.EnsureTenantWorkers(tenantID)
+
+	topic := r.getFunctionTopic(tenantID)
 
 	pubAck, err := r.js.Publish(topic, inputJSON, nats.MsgId(fmt.Sprintf("%d", time.Now().UnixNano())))
 
@@ -196,19 +204,21 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Header().Set("X-Gojinn-Job-ID", fmt.Sprintf("%d", pubAck.Sequence))
+	rw.Header().Set("X-Gojinn-Tenant", tenantID)
 	rw.WriteHeader(http.StatusAccepted)
 
 	resp := map[string]interface{}{
 		"status": "queued",
 		"job_id": pubAck.Sequence,
 		"stream": pubAck.Stream,
-		"msg":    "Job persisted to disk and queued for execution.",
+		"tenant": tenantID,
+		"msg":    "Job persisted to isolated tenant queue.",
 	}
 
 	return json.NewEncoder(rw).Encode(resp)
 }
 
-func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) error {
+func (r *Gojinn) extractTenantAndHandleMiddleware(rw http.ResponseWriter, req *http.Request) (string, error) {
 	origin := req.Header.Get("Origin")
 	if len(r.CorsOrigins) > 0 && origin != "" {
 		allowed := false
@@ -226,7 +236,7 @@ func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) err
 		}
 		if req.Method == "OPTIONS" {
 			rw.WriteHeader(http.StatusOK)
-			return nil
+			return "", fmt.Errorf("handled options")
 		}
 	}
 	tenantID := ""
@@ -246,19 +256,30 @@ func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) err
 			}
 		}
 		if !authorized {
-			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+			rw.WriteHeader(http.StatusUnauthorized)
+			return "", fmt.Errorf("unauthorized")
 		}
 		tenantID = clientKey
 	} else {
-		host, _, _ := net.SplitHostPort(req.RemoteAddr)
-		tenantID = host
+		host, _, err := net.SplitHostPort(req.RemoteAddr)
+		if err != nil || host == "" {
+			host = req.RemoteAddr
+			if strings.Contains(host, ":") && !strings.Contains(host, "[") {
+				host = strings.Split(host, ":")[0]
+			}
+		}
+
+		tenantID = strings.ReplaceAll(host, ".", "_")
+		tenantID = strings.ReplaceAll(tenantID, ":", "_")
+		tenantID = strings.ReplaceAll(tenantID, "[", "")
+		tenantID = strings.ReplaceAll(tenantID, "]", "")
 	}
 	if r.RateLimit > 0 {
 		limiter := r.getLimiter(tenantID)
 		if !limiter.Allow() {
 			rw.WriteHeader(http.StatusTooManyRequests)
-			return fmt.Errorf("rate limit exceeded")
+			return "", fmt.Errorf("rate limit exceeded")
 		}
 	}
-	return nil
+	return tenantID, nil
 }

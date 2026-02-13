@@ -1,11 +1,11 @@
 package gojinn
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,8 +120,8 @@ type Gojinn struct {
 	limiters   map[string]*rate.Limiter
 	limitersMu sync.Mutex
 
-	subs   []*nats.Subscription
-	subsMu sync.Mutex
+	tenantSubs map[string][]*nats.Subscription
+	subsMu     sync.Mutex
 
 	ClusterName  string   `json:"cluster_name,omitempty"`
 	ClusterPort  int      `json:"cluster_port,omitempty"`
@@ -147,6 +147,7 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
+	r.tenantSubs = make(map[string][]*nats.Subscription)
 
 	shutdown, err := setupTelemetry("gojinn-" + r.ClusterName)
 	if err != nil {
@@ -191,7 +192,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("cron job security check failed for %s: %w", j.WasmFile, err)
 			}
 			_, err := r.scheduler.AddFunc(j.Schedule, func() {
-				r.runBackgroundJob(j.WasmFile)
+				r.logger.Warn("Cron jobs execution disabled pending Multi-Tenant rewrite", zap.String("wasm", j.WasmFile))
 			})
 			if err != nil {
 				return fmt.Errorf("failed to schedule cron job: %v", err)
@@ -225,7 +226,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 			for _, sub := range r.MQTTSubs {
 				s := sub
 				token := c.Subscribe(s.Topic, 0, func(client mqtt.Client, msg mqtt.Message) {
-					go r.runAsyncJob(context.Background(), s.WasmFile, string(msg.Payload()))
+					r.logger.Warn("MQTT execution disabled pending Multi-Tenant rewrite", zap.String("topic", s.Topic))
 				})
 				if token.Wait() && token.Error() != nil {
 					r.logger.Error("MQTT Subscribe Error", zap.Error(token.Error()))
@@ -250,50 +251,41 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.Timeout = caddy.Duration(60 * time.Second)
 	}
 
-	if r.Path != "" {
-		wasmBytes, err := r.loadWasmSecurely(r.Path)
-		if err != nil {
-			return fmt.Errorf("failed to load sovereign module: %w", err)
-		}
-
-		go r.startWorkersAsync(wasmBytes)
-	}
-
 	return nil
 }
 
-func (r *Gojinn) startWorkersAsync(wasmBytes []byte) {
-	r.logger.Info("Provisioning NATS workers (Async)...", zap.Int("workers", r.PoolSize))
-	topic := r.getFunctionTopic()
-	streamName := "GOJINN_WORKER"
+func (r *Gojinn) EnsureTenantWorkers(tenantID string) error {
+	r.subsMu.Lock()
+	defer r.subsMu.Unlock()
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if r.js == nil {
-			continue
-		}
-
-		_, err := r.js.StreamInfo(streamName)
-		if err != nil {
-			continue
-		}
-
-		r.subsMu.Lock()
-		for i := 0; i < r.PoolSize; i++ {
-			sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
-			if err != nil {
-				r.logger.Error("Failed to start worker subscriber", zap.Error(err))
-			} else {
-				r.subs = append(r.subs, sub)
-			}
-		}
-		r.subsMu.Unlock()
-
-		r.logger.Info("All Workers Started Successfully via JetStream!", zap.Int("count", len(r.subs)))
-		return
+	if _, exists := r.tenantSubs[tenantID]; exists {
+		return nil
 	}
+
+	r.logger.Info("Provisioning Dynamic WASM Workers for Tenant...", zap.String("tenant", tenantID), zap.Int("workers", r.PoolSize))
+
+	wasmBytes, err := r.loadWasmSecurely(r.Path)
+	if err != nil {
+		return fmt.Errorf("failed to load wasm for tenant: %w", err)
+	}
+
+	topic := fmt.Sprintf("gojinn.tenant.%s.exec.>", tenantID)
+	streamName := fmt.Sprintf("WORKER_%s", strings.ToUpper(tenantID))
+
+	var subs []*nats.Subscription
+
+	for i := 0; i < r.PoolSize; i++ {
+		sub, err := r.startTenantWorker(tenantID, streamName, i, topic, wasmBytes)
+		if err != nil {
+			r.logger.Error("Failed to start tenant worker subscriber", zap.String("tenant", tenantID), zap.Error(err))
+			continue
+		}
+		subs = append(subs, sub)
+	}
+
+	r.tenantSubs[tenantID] = subs
+	r.logger.Info("Tenant Workers Provisioned Successfully!", zap.String("tenant", tenantID), zap.Int("count", len(subs)))
+	return nil
 }
 
 func (r *Gojinn) Cleanup() error {

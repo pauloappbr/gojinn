@@ -108,7 +108,7 @@ func (g *Gojinn) startEmbeddedNATS() error {
 	}
 
 	if g.StoreCipherKey != "" {
-		g.logger.Warn("🔒 Disk Encryption At-Rest is ENABLED. Do not lose the cipher key!")
+		g.logger.Warn("Disk Encryption At-Rest is ENABLED. Do not lose the cipher key!")
 		opts.JetStreamKey = g.StoreCipherKey
 		opts.JetStreamCipher = server.AES
 	}
@@ -186,111 +186,72 @@ func (g *Gojinn) connectLocalClient() error {
 	}
 	g.js = js
 
-	go g.ensureJetStreamResources()
-
 	return nil
 }
 
-func (g *Gojinn) ensureJetStreamResources() {
-	streamName := "GOJINN_WORKER"
-	kvBucket := "GOJINN_STATE"
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if g.js == nil {
-			continue
-		}
-
-		_, err := g.js.StreamInfo(streamName)
-		if err != nil {
-			g.logger.Info("Attempting to initialize Durable Stream...", zap.String("stream", streamName), zap.Int("replicas", g.ClusterReplicas))
-			_, err = g.js.AddStream(&nats.StreamConfig{
-				Name:      streamName,
-				Subjects:  []string{"gojinn.exec.>"},
-				Storage:   nats.FileStorage,
-				Retention: nats.WorkQueuePolicy,
-				Replicas:  g.ClusterReplicas,
-			})
-			if err != nil {
-				g.logger.Warn("Stream creation pending...", zap.Error(err))
-				continue
-			}
-			g.logger.Info("Durable Stream Ready!", zap.String("stream", streamName))
-		}
-
-		if g.kv == nil {
-			kv, err := g.js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket:      kvBucket,
-				Description: "Gojinn Distributed State",
-				Storage:     nats.FileStorage,
-				History:     1,
-				TTL:         0,
-				Replicas:    g.ClusterReplicas,
-			})
-
-			if err != nil {
-				g.logger.Warn("KV Bucket creation pending...", zap.Error(err))
-				continue
-			}
-
-			g.kv = kv
-			g.logger.Info("Distributed KV Store Ready!", zap.String("bucket", kvBucket))
-		}
-
-		go func() {
-			monitorTicker := time.NewTicker(5 * time.Second)
-			defer monitorTicker.Stop()
-
-			for range monitorTicker.C {
-				if g.js == nil {
-					continue
-				}
-
-				info, err := g.js.StreamInfo(streamName)
-				if err == nil && g.metrics != nil && g.metrics.queueDepth != nil {
-					g.metrics.queueDepth.WithLabelValues(streamName).Set(float64(info.State.Msgs))
-				}
-			}
-		}()
-
-		return
+func (g *Gojinn) EnsureTenantResources(tenantID string) (nats.KeyValue, error) {
+	if g.js == nil {
+		return nil, fmt.Errorf("JetStream not initialized")
 	}
+
+	streamName := fmt.Sprintf("WORKER_%s", strings.ToUpper(tenantID))
+	kvBucket := fmt.Sprintf("STATE_%s", strings.ToUpper(tenantID))
+	subject := fmt.Sprintf("gojinn.tenant.%s.exec.>", tenantID)
+
+	_, err := g.js.StreamInfo(streamName)
+	if err != nil {
+		g.logger.Info("Provisioning Isolated Tenant Stream...", zap.String("tenant", tenantID), zap.String("stream", streamName))
+		_, err = g.js.AddStream(&nats.StreamConfig{
+			Name:      streamName,
+			Subjects:  []string{subject},
+			Storage:   nats.FileStorage,
+			Retention: nats.WorkQueuePolicy,
+			Replicas:  g.ClusterReplicas,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision tenant stream: %w", err)
+		}
+	}
+
+	kv, err := g.js.KeyValue(kvBucket)
+	if err != nil {
+		g.logger.Info("Provisioning Isolated Tenant KV Store...", zap.String("tenant", tenantID), zap.String("bucket", kvBucket))
+		kv, err = g.js.CreateKeyValue(&nats.KeyValueConfig{
+			Bucket:      kvBucket,
+			Description: fmt.Sprintf("Isolated State for %s", tenantID),
+			Storage:     nats.FileStorage,
+			History:     1,
+			TTL:         0,
+			Replicas:    g.ClusterReplicas,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision tenant kv store: %w", err)
+		}
+	}
+
+	return kv, nil
 }
 
 func (g *Gojinn) ReloadWorkers() error {
-	g.logger.Info("Hot Reload Initiated: Recycling Workers...")
+	g.logger.Info("Hot Reload Initiated: Recycling Multi-Tenant Workers...")
 
 	g.subsMu.Lock()
 	defer g.subsMu.Unlock()
 
-	for _, sub := range g.subs {
-		if err := sub.Drain(); err != nil {
-			g.logger.Warn("Failed to drain worker sub", zap.Error(err))
+	for tenantID, subs := range g.tenantSubs {
+		for _, sub := range subs {
+			if err := sub.Drain(); err != nil {
+				g.logger.Warn("Failed to drain worker sub", zap.String("tenant", tenantID), zap.Error(err))
+			}
 		}
 	}
-	g.subs = nil
 
-	wasmBytes, err := g.loadWasmSecurely(g.Path)
-	if err != nil {
-		return fmt.Errorf("failed to reload wasm file: %w", err)
-	}
+	g.tenantSubs = make(map[string][]*nats.Subscription)
 
-	topic := g.getFunctionTopic()
-
-	for i := 0; i < g.PoolSize; i++ {
-		sub, err := g.startWorkerSubscriber(i, topic, wasmBytes)
-		if err != nil {
-			return fmt.Errorf("failed to start new worker %d: %w", i, err)
-		}
-		g.subs = append(g.subs, sub)
-	}
-
-	g.logger.Info("Hot Reload Complete", zap.Int("new_workers", len(g.subs)))
+	g.logger.Info("Hot Reload Complete. Workers will spin up on-demand.")
 	return nil
 }
 
-func (g *Gojinn) getFunctionTopic() string {
-	return fmt.Sprintf("gojinn.exec.%s", hashString(g.Path))
+func (g *Gojinn) getFunctionTopic(tenantID string) string {
+	return fmt.Sprintf("gojinn.tenant.%s.exec.%s", tenantID, hashString(g.Path))
 }
