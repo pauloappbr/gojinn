@@ -219,14 +219,14 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Resource Quotas:** CPU/RAM/IO enforcement per tenant.
 - [x] **Signed Audit Logs:** Tenant-scoped cryptographically verifiable logs.
 
-### 🟣 Phase 29: Formal Security & Transparency
+### 🟣 Phase 29: Formal Security & Transparency (DONE v0.29.0)
 *Trust through verification.*
-- [ ] **Independent Security Audit.**
-- [ ] **Threat Model Documentation:** STRIDE-based analysis.
-- [ ] **SBOM Publication:** Software Bill of Materials.
-- [ ] **Reproducible Builds.**
-- [ ] **Binary Hash Transparency Log.**
-- [ ] **Supply Chain Attestation:** SLSA-level compliance optional.
+- [x] **Independent Security Audit.**
+- [x] **Threat Model Documentation:** STRIDE-based analysis.
+- [x] **SBOM Publication:** Software Bill of Materials.
+- [x] **Reproducible Builds.**
+- [x] **Binary Hash Transparency Log.**
+- [x] **Supply Chain Attestation:** SLSA-level compliance optional.
 
 ### 🔴 Phase 30: Stability Freeze — v1.0 LTS
 *No new features. Only guarantees.*

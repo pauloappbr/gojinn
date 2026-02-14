@@ -18,16 +18,19 @@ func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 	ctxWazero := context.Background()
 	rConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 
-	if r.MemoryLimit != "" {
-		bytes, err := humanize.ParseBytes(r.MemoryLimit)
-		if err == nil && bytes > 0 {
-			const wasmPageSize = 65536
-			pages := uint32(bytes / wasmPageSize) //nolint:gosec
-			if bytes%wasmPageSize != 0 {
-				pages++
-			}
-			rConfig = rConfig.WithMemoryLimitPages(pages)
+	memLimit := r.MemoryLimit
+	if memLimit == "" {
+		memLimit = "128MB"
+	}
+
+	bytes, err := humanize.ParseBytes(memLimit)
+	if err == nil && bytes > 0 {
+		const wasmPageSize = 65536
+		pages := uint32(bytes / wasmPageSize) //nolint:gosec
+		if bytes%wasmPageSize != 0 {
+			pages++
 		}
+		rConfig = rConfig.WithMemoryLimitPages(pages)
 	}
 
 	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
